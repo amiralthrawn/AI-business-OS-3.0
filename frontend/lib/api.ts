@@ -1,3 +1,4 @@
+import type { ConfigCatalog, ConfigurationRead, ConfigurationUpdate, ImportKind, ImportResultRead, IntegrationPlan } from "@/lib/types-config";
 import type {
   AskAIResponse,
   BusinessContextRead,
@@ -287,6 +288,37 @@ export const getBusinessContext = () =>
   getJSON<BusinessContextRead>("/business-context", "Contexte métier introuvable");
 export const updateBusinessContext = (payload: BusinessContextUpdate) =>
   patchJSON<BusinessContextRead>("/business-context", payload, "Mise à jour du contexte métier impossible");
+// V3 configuration phase (sector, functions, tools, real file imports).
+export const getConfigCatalog = () => getJSON<ConfigCatalog>("/configuration/catalog", "Catalogue introuvable");
+export const getConfiguration = () => getJSON<ConfigurationRead>("/configuration", "Configuration introuvable");
+export const getIntegrationPlan = () => getJSON<IntegrationPlan>("/configuration/integration-plan", "Plan d'intégration introuvable");
+
+export async function saveConfiguration(payload: ConfigurationUpdate): Promise<ConfigurationRead> {
+  const res = await apiFetch(`${API_URL}/configuration`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(detail?.detail ?? `Enregistrement de la configuration impossible (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function importDataFile(kind: ImportKind, file: File, tool?: string): Promise<ImportResultRead> {
+  const body = new FormData();
+  body.append("file", file);
+  const query = tool ? `?tool=${encodeURIComponent(tool)}` : "";
+  const res = await apiFetch(`${API_URL}/configuration/imports/${kind}${query}`, { method: "POST", body, cache: "no-store" });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(typeof detail?.detail === "string" ? detail.detail : `Import impossible (${res.status})`);
+  }
+  return res.json();
+}
+
 export const getConfigurationSuggestions = () =>
   getJSON<ConfigurationSuggestionRead[]>("/business-context/suggestions", "Aucune suggestion");
 
@@ -411,6 +443,8 @@ export const updateDraft = (id: string, payload: { subject?: string; body?: stri
   sendJSON<CommunicationDetail>("PATCH", `/communications/${id}`, payload, "Modification impossible");
 export const submitDraft = (id: string) =>
   sendJSON<{ task_id: string; communication: CommunicationDetail }>("POST", `/communications/${id}/submit`, undefined, "Soumission impossible");
+export const markDraftSent = (id: string) =>
+  sendJSON<CommunicationDetail>("POST", `/communications/${id}/mark-sent`, undefined, "Confirmation impossible");
 export const getFollowUps = () => getJSON<FollowUps>("/follow-ups", "Relances introuvables");
 export const getMailboxes = () => getJSON<MailboxOverview>("/communications/mailboxes", "Boîtes introuvables");
 export const listMailbox = (key: string) => getJSON<MailboxRow[]>(`/communications/mailboxes/${key}`, "Boîte introuvable");

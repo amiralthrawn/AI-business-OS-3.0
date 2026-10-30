@@ -136,6 +136,19 @@ def submit(
     return {"task_id": task.id, "communication": service.get_detail(db, draft)}
 
 
+@router.post("/communications/{communication_id}/mark-sent")
+def mark_sent(
+    communication_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    event_bus: EventBus = Depends(get_event_bus),
+    company: Company = Depends(current_company),
+    _: CurrentUser = Depends(require(ACTION_SUBMIT_EMAIL)),
+) -> dict:
+    draft = _get(db, company, communication_id)
+    _guard(lambda: service.mark_email_sent(db, event_bus, draft), db)
+    return service.get_detail(db, draft)
+
+
 @router.get("/follow-ups")
 def follow_ups(db: Session = Depends(get_db), company: Company = Depends(current_company), user: CurrentUser = Depends(get_current_user)) -> dict:
     return {

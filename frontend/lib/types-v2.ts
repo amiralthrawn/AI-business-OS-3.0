@@ -462,7 +462,7 @@ export interface CommunicationRow {
   channel: string;
   channel_detail: string | null;
   direction: "inbound" | "outbound";
-  status: "received" | "sent" | "draft" | "pending_validation" | "rejected";
+  status: "received" | "sent" | "draft" | "pending_validation" | "rejected" | "approved";
   purpose: string | null;
   subject: string | null;
   snippet: string;

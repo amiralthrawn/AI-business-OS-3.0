@@ -42,7 +42,7 @@ export default async function SettingsPage() {
         }
       />
       {error && <ErrorBanner message={error} />}
-      {company && context && <SettingsForm company={company} context={context} suggestions={suggestions} />}
+      {company && context && <SettingsForm company={company} context={context} suggestions={suggestions} canEdit={can(me?.permissions, "write:settings")} />}
       <section>
         <SectionLabel id="profils">Équipe et accès</SectionLabel>
         <UsersAndRoles users={users} roles={roles} customRoles={customRoles} catalog={catalog} canManage={can(me?.permissions, "write:settings")} selfId={me?.profile?.id ?? null} />

@@ -61,3 +61,9 @@ class BusinessContext(Base, IdMixin, TimestampMixin):
     # {"min_cash": float, "declared_valuation": float, "declared_valuation_date": str,
     #  "revenue_multiple_min": float, "revenue_multiple_max": float}.
     finance_settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # V3 configuration phase (app.configuration): the sector the company
+    # declared, the functions it wants watched, the tools it runs on and what
+    # was imported from them, plus its own words on problems and outside
+    # factors. {"sector_key", "sector_custom", "tools": {key: {...}},
+    # "custom_tools": [...], "problems", "external_factors", "completed_at"}.
+    configuration: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

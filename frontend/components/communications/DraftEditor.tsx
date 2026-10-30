@@ -6,20 +6,21 @@ import { useState } from "react";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
-import { submitDraft, updateDraft } from "@/lib/api";
+import { AUTH_REQUIRED, markDraftSent, submitDraft, updateDraft } from "@/lib/api";
 import type { CommunicationDetail } from "@/lib/types";
 
 const field = "w-full rounded-xl border-[1.5px] border-border-strong px-4 py-2.5 text-[13.5px] outline-none focus:border-accent";
 
 // AI draft -> human edits -> submit for validation -> (approval in Actions) -> send.
-// The mock email provider records the message as sent; nothing leaves the
-// machine in this MVP, and the UI says so.
+// With sign-in (a real company) an approved message is handed to the person,
+// who sends it from their own mailbox and confirms it; it is never recorded
+// as sent before that. Legacy demo mode keeps the demonstration provider.
 export default function DraftEditor({ draft, canWrite, canSubmit }: { draft: CommunicationDetail; canWrite: boolean; canSubmit: boolean }) {
   const router = useRouter();
   const [to, setTo] = useState(draft.to_address ?? "");
   const [subject, setSubject] = useState(draft.subject ?? "");
   const [body, setBody] = useState(draft.body ?? "");
-  const [busy, setBusy] = useState<"save" | "submit" | null>(null);
+  const [busy, setBusy] = useState<"save" | "submit" | "sent" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const editable = canWrite && (draft.status === "draft" || draft.status === "rejected");
@@ -52,10 +53,25 @@ export default function DraftEditor({ draft, canWrite, canSubmit }: { draft: Com
     }
   }
 
+  async function confirmSent() {
+    setBusy("sent");
+    setError(null);
+    try {
+      await markDraftSent(draft.id);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Une erreur est survenue.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const mailto = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
   return (
     <Card className="space-y-3 p-5">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge label={draft.status === "pending_validation" ? "En attente de validation" : draft.status === "rejected" ? "Refusé — à reprendre" : draft.status === "sent" ? "Envoyé" : "Brouillon"} tone={draft.status === "pending_validation" ? "warning" : draft.status === "sent" ? "success" : "accent"} />
+        <Badge label={draft.status === "pending_validation" ? "En attente de validation" : draft.status === "rejected" ? "Refusé — à reprendre" : draft.status === "approved" ? "Approuvé — à envoyer" : draft.status === "sent" ? "Envoyé" : "Brouillon"} tone={draft.status === "pending_validation" || draft.status === "approved" ? "warning" : draft.status === "sent" ? "success" : "accent"} />
         {draft.source === "template_draft" && <span className="text-[11.5px] text-text-faint">Préparé à partir des données de l&rsquo;objet lié (aucun modèle de langage configuré).</span>}
         {draft.source === "ai_draft" && <span className="text-[11.5px] text-text-faint">Reformulé par le modèle de langage sans ajout de fait.</span>}
       </div>
@@ -68,13 +84,26 @@ export default function DraftEditor({ draft, canWrite, canSubmit }: { draft: Com
           <Button loading={busy === "submit"} disabled={busy !== null || !canSubmit || !to.trim()} onClick={submit} title={canSubmit ? undefined : "Votre rôle ne permet pas de soumettre un email"}>
             Soumettre à validation
           </Button>
-          <span className="text-[11.5px] text-text-faint">Rien n&rsquo;est envoyé avant validation humaine. Envoi simulé (fournisseur email de démonstration).</span>
+          <span className="text-[11.5px] text-text-faint">Rien n&rsquo;est envoyé avant validation humaine.{AUTH_REQUIRED ? "" : " Envoi simulé (fournisseur email de démonstration)."}</span>
         </div>
       )}
       {(draft.status === "pending_validation" || taskId) && (
         <p className="text-[12.5px] text-text-soft">
           En attente de validation dans <Link href="/actions/tasks" className="font-semibold text-accent-strong hover:underline">Actions → Tâches</Link> par une personne habilitée.
         </p>
+      )}
+      {draft.status === "approved" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <a href={mailto} className="inline-flex items-center rounded-full bg-accent px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90">
+            Ouvrir dans ma messagerie
+          </a>
+          {canSubmit && (
+            <Button variant="ghost" loading={busy === "sent"} disabled={busy !== null} onClick={confirmSent}>
+              J&rsquo;ai envoyé cet email
+            </Button>
+          )}
+          <span className="text-[11.5px] text-text-faint">Approuvé : envoyez-le depuis votre messagerie, puis confirmez ici pour mettre à jour le suivi.</span>
+        </div>
       )}
       {error && <p className="text-[12.5px] text-danger">{error}</p>}
     </Card>

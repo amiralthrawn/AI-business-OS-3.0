@@ -395,6 +395,11 @@ def _deterministic_answer(context: dict) -> str:
 
 
 # The answer's language is added by `_complete` (llm_language()).
+_PROFILE_HINT = (
+    "When the data includes a company_profile, speak this business's language (its vocabulary, its key "
+    "metrics, its usual risks and outside factors) and mention the declared tools only when relevant."
+)
+
 _DEALS_SYSTEM_PROMPT = (
     "You are the assistant of an SME executive. Answer concisely, strictly from the data provided "
     "(linked objects, margins, supplier comparison). Every cost carries its nature "
@@ -758,7 +763,7 @@ class AIOrchestrator:
         try:
             # Generated in the interface language -- not translated afterwards.
             return self.llm.complete(
-                system_prompt=f"{system_prompt} {llm_language()}",
+                system_prompt=f"{system_prompt} {_PROFILE_HINT} {llm_language()}",
                 user_prompt=f"Question: {question}\n\nData:\n{json.dumps(context, indent=2)}",
             )
         except Exception as exc:

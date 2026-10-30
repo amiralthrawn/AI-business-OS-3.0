@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.i18n import both, current_locale, llm_language, tx
 from app.actions.service import ActionsService
 from app.ai.llm import DeterministicLLMClient, LLMClient
@@ -632,6 +633,14 @@ def finalize_send_email(session: Session, event_bus: EventBus, task: Task) -> Ta
     draft = session.get(Communication, task.related_entity_id) if task.related_entity_id else None
     if draft is None:
         raise CommunicationError(tx("Brouillon introuvable", "Draft not found"))
+    if get_settings().auth_mode != "legacy":
+        # No mailbox is connected: nothing is sent by the product. The approved
+        # message waits for the person to send it from their own mailbox and
+        # confirm it (mark_email_sent) -- it is never recorded as sent before that.
+        draft.status = "approved"
+        task.status = TaskStatus.EXECUTED
+        session.commit()
+        return task
     sent = connector_registry.get_connector("email").send_message(
         recipients=[a.strip() for a in (draft.to_address or "").split(",") if a.strip()],
         subject=draft.subject or "",
@@ -656,6 +665,26 @@ def finalize_send_email(session: Session, event_bus: EventBus, task: Task) -> Ta
         )
     )
     return task
+
+
+def mark_email_sent(session: Session, event_bus: EventBus, draft: Communication) -> Communication:
+    """The person confirms they sent an approved message from their own mailbox."""
+
+    if draft.status != "approved":
+        raise CommunicationError(tx("Seul un message approuvé peut être marqué comme envoyé.", "Only an approved message can be marked as sent."))
+    draft.status = "sent"
+    draft.occurred_at = _now()
+    draft.source = "manual_send"
+    session.commit()
+    _apply_sent_effects(session, event_bus, draft)
+    event_bus.publish(
+        BusinessEvent(
+            event_type=EMAIL_SENT,
+            source="communications",
+            payload={"subject_type": "communication", "subject_id": str(draft.id), "purpose": draft.purpose, "provider": "manual_send"},
+        )
+    )
+    return draft
 
 
 def _apply_sent_effects(session: Session, event_bus: EventBus, draft: Communication) -> None:

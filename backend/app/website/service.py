@@ -29,6 +29,7 @@ from app.ai.llm import DeterministicLLMClient, LLMClient
 from app.core.entities import AIRun, Company, RelatedEntityType, Task, TaskStatus, WebsiteChangeProposal
 from app.core.events.bus import EventBus
 from app.core.events.business_event import BusinessEvent
+from app.config import get_settings
 from app.website.demo_site import DEMO_BASE, DEMO_PAGES
 
 MAX_PAGES = 20
@@ -314,6 +315,13 @@ def audit_website(session: Session, event_bus: EventBus | None, company: Company
     else:
         _step(run, "Aucun site configuré", "skipped", "Analyse du site de démonstration intégré (simulation).")
     run.mode, run.target = mode, base
+
+    if mode == "simulated" and get_settings().auth_mode != "legacy":
+        # A real company is never shown an analysis of a demo site.
+        _step(run, "Analyse impossible", "failed", "Renseignez l'adresse de votre site dans la configuration de l'entreprise (et vérifiez qu'il est accessible) : AI Business OS n'analyse jamais un site de démonstration à la place du vôtre.")
+        run.status, run.finished_at = "failed", datetime.now(timezone.utc)
+        session.commit()
+        return run
 
     if mode == "real" and not _allowed_by_robots(active, base):
         _step(run, "robots.txt interdit l'exploration", "failed")

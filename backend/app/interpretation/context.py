@@ -83,6 +83,7 @@ def assemble_context(
         "business_context": {
             "monitored_domains": business_context.monitored_domains,
             "stated_objectives": business_context.stated_objectives,
+            "company_profile": _company_profile(session, company_id),
             "declared_baseline_for_this_metric": business_context.declared_baselines.get(
                 payload.get("observable")
             ),
@@ -111,3 +112,9 @@ def assemble_context(
             context["capability_data"] = capability_data
 
     return context, capabilities_consulted
+
+
+def _company_profile(session, company_id) -> dict:
+    from app.configuration.service import ai_profile, get_configuration
+
+    return ai_profile(get_configuration(session, company_id))

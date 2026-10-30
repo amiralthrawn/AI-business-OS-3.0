@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.i18n import text_of, tx
 from app.communications.service import _INTENTS, _row
 from app.connectors.registry import connector_registry
@@ -164,7 +165,8 @@ def mailbox_overview(session: Session, company_id: uuid.UUID) -> dict:
                 "last_at": msgs[0].occurred_at if msgs else None,
             }
         )
-    providers = {name: type(connector_registry.get_connector(name)).__name__ for name in connector_registry.list_connectors()}
+    # Demonstration providers are never presented as the account of a real company.
+    providers = {name: type(connector_registry.get_connector(name)).__name__ for name in connector_registry.list_connectors() if get_settings().auth_mode == "legacy"}
     return {
         "mailboxes": boxes,
         "excluded_count": excluded,

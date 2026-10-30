@@ -24,6 +24,9 @@ Pour arrêter, fermez les deux fenêtres « backend » et « frontend ».
 - **Accounts:** sign-up for a new company, sign-in, single-use invitation links. Passwords hashed with scrypt, 12-hour signed sessions.
 - **One space per company:** every query and every Event Log entry is scoped to the signed-in company.
 - **Roles the director controls:** new base role *Comptabilité*, company-specific job roles, and per-person access grants and revocations.
+- **Configuration by the AI (step 2):** 55 sectors and 200+ tools (ERP, CRM, accounting, banks, BI, spreadsheets, databases, payment, HR, e-commerce…). The chosen sector gives the AI its vocabulary, key metrics, usual risks and outside factors; the chosen tools produce an integration plan with the exact export path of each tool.
+- **Real data import:** CSV, Excel and French FEC files are read for real into customers, suppliers, products and a financial summary. Columns are recognised by meaning; re-importing never duplicates.
+- **No demonstration data for a real company:** no demo mailbox, no fake "sent" email (an approved email is handed to the person, who sends it and confirms), no demo-site analysis.
 - **One-click launch:** `start.bat` now creates `.env`, installs dependencies and migrates the database by itself.
 
 ---
@@ -387,6 +390,8 @@ cd ..
 The test suite runs on isolated test databases and does not modify `backend/data_core.db`. There is no frontend unit test runner yet: ESLint and the `next build` type check are the frontend quality gates.
 
 ## Limitations and honesty
+
+**Direct connections (V3, step 2).** Today data comes in through file import (CSV, Excel, FEC), which works for every tool that can export. Direct connections (OAuth to a CRM or mailbox, API keys, open-banking aggregation, read-only database access) need credentials or an authorisation from the company or the provider; they are listed in the integration plan as what they are and never shown as connected. Nothing is sent by email by the product itself.
 
 This is an MVP. The following are deliberate, documented limits, not hidden gaps.
 

@@ -14,6 +14,7 @@ from app.communications.router import router as communications_router
 from app.company.router import router as company_router
 from app.config import get_settings
 from app.core.i18n import LocaleMiddleware
+from app.configuration.router import router as configuration_router
 from app.connectors.router import router as connectors_router
 from app.data.router import router as data_router
 from app.database import engine
@@ -92,6 +93,7 @@ app.include_router(auth_router)
 
 app.include_router(business_context_router, dependencies=SIGNED_IN)
 app.include_router(company_router, dependencies=SIGNED_IN)
+app.include_router(configuration_router, dependencies=SIGNED_IN)
 app.include_router(connectors_router, dependencies=SIGNED_IN)
 app.include_router(data_router, dependencies=SIGNED_IN)
 app.include_router(procurement_router, dependencies=[*SIGNED_IN, Depends(require(access.VIEW_PROCUREMENT))])

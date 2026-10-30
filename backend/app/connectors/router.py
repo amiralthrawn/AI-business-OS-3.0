@@ -3,6 +3,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.i18n import tx
 from app.connectors.ingestion import sync_connector
 from app.connectors.registry import connector_registry
@@ -30,6 +31,9 @@ def _status(db: Session, connector_type: str) -> dict:
 
 @router.get("")
 def list_connectors(db: Session = Depends(get_db)) -> dict:
+    # Demonstration providers are only listed in the legacy demo mode.
+    if get_settings().auth_mode != "legacy":
+        return {"connectors": []}
     return {"connectors": [_status(db, connector_type) for connector_type in connector_registry.list_connectors()]}
 
 
@@ -47,6 +51,16 @@ def trigger_connector_sync(connector_type: str, db: Session = Depends(get_db)) -
     company = db.query(Company).first()
     if company is None:
         raise HTTPException(status_code=404, detail=tx("Aucune entreprise n'est encore configurée", "No company is configured yet"))
+
+    if get_settings().auth_mode != "legacy":
+        # The registered providers are demonstration data: they never run for a real company.
+        raise HTTPException(
+            status_code=409,
+            detail=tx(
+                "Cette connexion nécessite l'autorisation de votre messagerie ou de votre outil. En attendant, déposez les exports de vos outils dans Configuration → Données de vos outils.",
+                "This connection needs your mailbox or tool to be authorised. Meanwhile, drop your tools' exports in Settings → Data from your tools.",
+            ),
+        )
 
     try:
         provider = connector_registry.get_connector(connector_type)

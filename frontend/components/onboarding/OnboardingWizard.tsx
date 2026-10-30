@@ -1,58 +1,51 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import Badge from "@/components/ui/Badge";
+import { useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
 import Chip from "@/components/ui/Chip";
-import Toggle from "@/components/ui/Toggle";
-import { AUTH_REQUIRED, createUser, setSelectedProfile, updateBusinessContext, updateCompany } from "@/lib/api";
+import DataImport from "@/components/configuration/DataImport";
+import SectorPicker from "@/components/configuration/SectorPicker";
+import ToolsPicker from "@/components/configuration/ToolsPicker";
+import { AUTH_REQUIRED, createUser, getConfigCatalog, getConfiguration, saveConfiguration, setSelectedProfile, updateCompany } from "@/lib/api";
 import { ROLE_LABEL } from "@/lib/objects";
 import type { BusinessContextRead, CompanyRead, Role } from "@/lib/types";
+import type { ConfigCatalog, ConfigurationUpdate } from "@/lib/types-config";
 
 const SIZE_OPTIONS = ["1–10", "11–50", "51–200", "200+"];
 const COUNTRY_OPTIONS = [
   { code: "FR", label: "France" },
-  { code: "DE", label: "Allemagne" },
   { code: "BE", label: "Belgique" },
   { code: "CH", label: "Suisse" },
+  { code: "LU", label: "Luxembourg" },
+  { code: "DE", label: "Allemagne" },
+  { code: "ES", label: "Espagne" },
+  { code: "IT", label: "Italie" },
+  { code: "PT", label: "Portugal" },
+  { code: "NL", label: "Pays-Bas" },
+  { code: "GB", label: "Royaume-Uni" },
+  { code: "MA", label: "Maroc" },
+  { code: "DZ", label: "Algérie" },
+  { code: "TN", label: "Tunisie" },
+  { code: "SN", label: "Sénégal" },
+  { code: "CI", label: "Côte d'Ivoire" },
+  { code: "AE", label: "Émirats arabes unis" },
+  { code: "US", label: "États-Unis" },
+  { code: "CA", label: "Canada" },
 ];
-const DOMAIN_OPTIONS = [
-  { value: "finance", label: "Finance", enabled: true },
-  { value: "procurement", label: "Achats / Procurement", enabled: true },
-  { value: "sales", label: "Ventes", enabled: true },
-  { value: "hr", label: "Ressources humaines", enabled: false },
-  { value: "marketing", label: "Marketing", enabled: false },
-  { value: "supply_chain", label: "Supply Chain", enabled: false },
-];
-const SYSTEMS = [
-  { key: "erp", label: "ERP" },
-  { key: "crm", label: "CRM" },
-  { key: "accounting", label: "Comptabilité" },
-  { key: "ecommerce", label: "E-commerce" },
-  { key: "hr", label: "RH / Paie" },
-] as const;
 
-// V2: the default sector is Travel Agency (changeable; the model stays
-// generic -- products can be stays/services, suppliers hotels/carriers).
-const DEFAULT_SECTOR = "Agence de voyage (Travel Agency)";
-const SECTOR_OPTIONS = [DEFAULT_SECTOR, "Négoce / distribution B2B", "Industrie", "Services aux entreprises", "E-commerce"];
-
-// V2 roles: the second part of the setup -- who is using the OS, in which
-// role (brain/permissions.md). Shapes navigation, editable objects and
-// the actions this person can validate.
+// V2 roles: the second part of the setup in the legacy demo mode only
+// (brain/permissions.md). With sign-in the person already has their role.
 const ROLE_OPTIONS: { role: Role; hint: string }[] = [
   { role: "director", hint: "Vue globale, valide toutes les actions" },
   { role: "sales", hint: "Demandes, devis, commandes, relances clients" },
   { role: "procurement", hint: "Demandes d'achat, fournisseurs, commandes" },
   { role: "operations", hint: "Réceptions, livraisons, stock" },
-  { role: "hr", hint: "Communications et actions (RH à venir)" },
+  { role: "hr", hint: "Communications et actions (RH)" },
   { role: "employee", hint: "Consultation et tâches" },
 ];
 
-// V3: the signed-in person already has their account and role (created at
-// sign-up), so the role step only exists in the legacy demo mode.
-const STEPS = ["Entreprise", "Organisation", "Systèmes actuels", ...(AUTH_REQUIRED ? [] : ["Votre rôle"]), "Récapitulatif"];
+const STEPS = ["Entreprise", "Activité", "Fonctions", "Outils", "Vos données", ...(AUTH_REQUIRED ? [] : ["Votre rôle"]), "Récapitulatif"];
 
 export default function OnboardingWizard({
   initialCompany,
@@ -65,20 +58,89 @@ export default function OnboardingWizard({
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [catalog, setCatalog] = useState<ConfigCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [importRefresh, setImportRefresh] = useState(0);
 
   const [name, setName] = useState(initialCompany?.name ?? "");
-  // V3: the company declares its own sector; the V2 demo default stays for legacy mode.
-  const [industry, setIndustry] = useState(initialCompany?.industry || (AUTH_REQUIRED ? "" : DEFAULT_SECTOR));
+  const [sectorKey, setSectorKey] = useState("");
+  const [sectorCustom, setSectorCustom] = useState("");
   const [userName, setUserName] = useState("");
   const [role, setRole] = useState<Role>("director");
   const [size, setSize] = useState(initialContext?.company_size ?? "11–50");
   const [country, setCountry] = useState(initialContext?.country ?? "FR");
-  const [domains, setDomains] = useState<string[]>(initialContext?.monitored_domains ?? ["finance", "procurement", "sales"]);
+  const [businessModel, setBusinessModel] = useState(initialContext?.business_model ?? "");
+  const [functions, setFunctions] = useState<string[]>(initialContext?.monitored_domains ?? []);
   const [objectives, setObjectives] = useState(initialContext?.stated_objectives ?? "");
-  const [systems, setSystems] = useState<Record<string, boolean>>({ erp: false, crm: false, accounting: false, ecommerce: false, hr: false });
+  const [problems, setProblems] = useState("");
+  const [externalFactors, setExternalFactors] = useState("");
+  const [toolKeys, setToolKeys] = useState<string[]>([]);
+  const [customTools, setCustomTools] = useState<string[]>([]);
 
-  function toggleDomain(value: string) {
-    setDomains((prev) => (prev.includes(value) ? prev.filter((d) => d !== value) : [...prev, value]));
+  useEffect(() => {
+    getConfigCatalog().then(setCatalog).catch((err) => setCatalogError(err instanceof Error ? err.message : "Catalogue indisponible."));
+    getConfiguration()
+      .then((c) => {
+        const cfg = c.configuration;
+        if (cfg.sector_key) setSectorKey(cfg.sector_key);
+        if (cfg.sector_custom) setSectorCustom(cfg.sector_custom);
+        if (cfg.problems) setProblems(cfg.problems);
+        if (cfg.external_factors) setExternalFactors(cfg.external_factors);
+        if (cfg.tools) setToolKeys(Object.keys(cfg.tools));
+        if (cfg.custom_tools) setCustomTools(cfg.custom_tools);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const group = catalog?.sectors.find((s) => s.key === sectorKey)?.group;
+  const groupInfo = catalog?.groups.find((g) => g.key === group) ?? catalog?.groups.find((g) => g.key === "generic");
+  const sectorLabel = sectorKey === "autre" ? sectorCustom.trim() : catalog?.sectors.find((s) => s.key === sectorKey)?.label ?? "";
+
+  function toggleFunction(value: string) {
+    setFunctions((prev) => (prev.includes(value) ? prev.filter((d) => d !== value) : [...prev, value]));
+  }
+
+  function payload(): ConfigurationUpdate {
+    return {
+      sector_key: sectorKey || undefined,
+      sector_custom: sectorCustom,
+      functions,
+      tools: toolKeys,
+      custom_tools: customTools,
+      problems,
+      external_factors: externalFactors,
+      company_size: size,
+      country,
+      business_model: businessModel || undefined,
+      objectives,
+    };
+  }
+
+  async function persist() {
+    await Promise.all([updateCompany({ name: name.trim() || undefined }), saveConfiguration(payload())]);
+  }
+
+  function stepReady(): boolean {
+    if (STEPS[step] === "Entreprise") return !!name.trim() && !!sectorKey && (sectorKey !== "autre" || !!sectorCustom.trim());
+    return true;
+  }
+
+  async function next() {
+    setError(null);
+    // The tools are saved before the data step so every upload attaches to a declared tool.
+    if (STEPS[step] === "Outils") {
+      setSaving(true);
+      try {
+        await persist();
+        setImportRefresh((n) => n + 1);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Une erreur est survenue lors de l'enregistrement.");
+        setSaving(false);
+        return;
+      }
+      setSaving(false);
+    }
+    setStep((s) => s + 1);
   }
 
   function skipToProduct() {
@@ -90,23 +152,13 @@ export default function OnboardingWizard({
     setSaving(true);
     setError(null);
     try {
-      await Promise.all([
-        updateCompany({ name: name.trim() || undefined, industry: industry.trim() || undefined }),
-        updateBusinessContext({
-          company_size: size,
-          country,
-          monitored_domains: domains,
-          stated_objectives: objectives.trim() || undefined,
-        }),
-      ]);
-      // Second part: the person and their role -> a profile selected for
-      // every following API call (cookie read by lib/api.ts).
+      await persist();
+      // Legacy demo mode only: the person and their role -> a profile selected for every API call.
       if (!AUTH_REQUIRED) {
         const profile = await createUser({ name: userName.trim() || "Moi", role });
         setSelectedProfile(profile.id);
       }
       localStorage.setItem("aibos_onboarding_done", "1");
-      localStorage.setItem("aibos_systems", JSON.stringify(systems));
       router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Une erreur est survenue lors de l'enregistrement.");
@@ -138,13 +190,12 @@ export default function OnboardingWizard({
         {STEPS[step] === "Entreprise" && (
           <>
             <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
-              Configurons votre
+              Faisons connaissance
               <br />
-              espace de travail
+              avec votre entreprise
             </h1>
             <p className="mt-3.5 max-w-lg text-[15px] text-text-soft">
-              Quelques informations pour personnaliser AI Business OS à votre activité. Vous pourrez tout modifier plus
-              tard dans Configuration.
+              L&rsquo;IA adapte son vocabulaire, ses indicateurs et ses questions à votre secteur. Vous pourrez tout modifier plus tard dans Configuration.
             </p>
 
             <div className="mt-9">
@@ -152,127 +203,164 @@ export default function OnboardingWizard({
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="ex. Acme Manufacturing"
+                placeholder="ex. Acme Négoce"
                 className="w-full rounded-xl border-[1.5px] border-border-strong px-4 py-3.5 text-[17px] font-semibold outline-none focus:border-accent"
               />
             </div>
 
             <div className="mt-7">
               <label className="mb-2 block text-[13px] font-semibold text-text">Secteur d&rsquo;activité</label>
-              <input
-                value={industry}
-                onChange={(e) => setIndustry(e.target.value)}
-                placeholder="ex. Fabrication industrielle"
-                className="w-full rounded-xl border-[1.5px] border-border-strong px-4 py-3 text-[14.5px] outline-none focus:border-accent"
-              />
-              <div className="mt-2.5 flex flex-wrap gap-2">
-                {SECTOR_OPTIONS.map((opt) => (
-                  <Chip key={opt} label={opt} selected={industry === opt} onClick={() => setIndustry(opt)} />
+              {catalog ? (
+                <SectorPicker sectors={catalog.sectors} sectorKey={sectorKey} custom={sectorCustom} onChange={(k, c) => { setSectorKey(k); setSectorCustom(c); }} />
+              ) : (
+                <p className="text-[13px] text-text-faint">{catalogError ?? "Chargement des secteurs…"}</p>
+              )}
+            </div>
+
+            <div className="mt-7">
+              <label className="mb-2 block text-[13px] font-semibold text-text">Taille de l&rsquo;entreprise (personnes)</label>
+              <div className="flex flex-wrap gap-2.5">
+                {SIZE_OPTIONS.map((opt) => (
+                  <Chip key={opt} label={opt} selected={size === opt} onClick={() => setSize(opt)} />
                 ))}
               </div>
             </div>
 
             <div className="mt-7">
-              <label className="mb-2 block text-[13px] font-semibold text-text">Taille de l&rsquo;entreprise</label>
-              <div className="flex gap-2.5">
-                {SIZE_OPTIONS.map((opt) => (
-                  <Chip key={opt} label={opt} selected={size === opt} onClick={() => setSize(opt)} />
+              <label className="mb-2 block text-[13px] font-semibold text-text">Pays principal</label>
+              <div className="flex flex-wrap gap-2">
+                {COUNTRY_OPTIONS.map((opt) => (
+                  <Chip key={opt.code} label={opt.label} selected={country === opt.code} onClick={() => setCountry(opt.code)} />
                 ))}
               </div>
             </div>
           </>
         )}
 
-        {STEPS[step] === "Organisation" && (
+        {STEPS[step] === "Activité" && (
           <>
             <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
-              Comment est organisée
+              Comment gagnez-vous
               <br />
-              votre entreprise&nbsp;?
+              de l&rsquo;argent&nbsp;?
             </h1>
-            <p className="mt-3.5 max-w-lg text-[15px] text-text-soft">Ces réponses déterminent les domaines que l&rsquo;IA surveille en priorité.</p>
+            <p className="mt-3.5 max-w-lg text-[15px] text-text-soft">
+              {sectorLabel ? `Pour ${sectorLabel.toLowerCase()}, voici les questions qui comptent. ` : ""}Répondez avec vos mots : l&rsquo;IA s&rsquo;en sert pour comprendre la suite.
+            </p>
 
-            <div className="mt-9">
-              <label className="mb-2 block text-[13px] font-semibold text-text">Pays</label>
-              <div className="flex flex-wrap gap-2.5">
-                {COUNTRY_OPTIONS.map((opt) => (
-                  <Chip key={opt.code} label={opt.label} selected={country === opt.code} onClick={() => setCountry(opt.code)} />
-                ))}
+            {groupInfo && groupInfo.business_models.length > 0 && (
+              <div className="mt-8">
+                <label className="mb-2 block text-[13px] font-semibold text-text">Votre modèle</label>
+                <div className="flex flex-wrap gap-2.5">
+                  {groupInfo.business_models.map((m) => (
+                    <Chip key={m} label={m} selected={businessModel === m} onClick={() => setBusinessModel(businessModel === m ? "" : m)} />
+                  ))}
+                </div>
               </div>
-            </div>
-
-            <div className="mt-7">
-              <label className="mb-2 block text-[13px] font-semibold text-text">Fonctions surveillées par l&rsquo;IA</label>
-              <div className="grid grid-cols-2 gap-2.5">
-                {DOMAIN_OPTIONS.map((opt) => (
-                  <div key={opt.value} className="relative">
-                    <Chip
-                      label={opt.label}
-                      selected={domains.includes(opt.value)}
-                      onClick={opt.enabled ? () => toggleDomain(opt.value) : undefined}
-                      icon={
-                        domains.includes(opt.value) ? (
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                        ) : undefined
-                      }
-                    />
-                    {!opt.enabled && <span className="pointer-events-none absolute -right-1 -top-2 rounded-full bg-surface-sunken px-1.5 py-0.5 text-[9px] font-semibold text-text-faint">bientôt</span>}
-                  </div>
-                ))}
-              </div>
-              <p className="mt-3 text-[12px] text-text-faint">Vous pourrez ajuster ces informations à tout moment depuis Configuration.</p>
-            </div>
+            )}
 
             <div className="mt-7">
               <label className="mb-2 block text-[13px] font-semibold text-text">Votre objectif principal</label>
               <textarea
                 value={objectives}
                 onChange={(e) => setObjectives(e.target.value)}
-                placeholder="ex. Protéger la marge sur nos produits clés et réduire la dépendance à un fournisseur unique."
+                placeholder="ex. Protéger la marge sur nos références clés et réduire la dépendance à un fournisseur."
                 rows={3}
                 className="w-full resize-none rounded-xl border-[1.5px] border-border-strong px-4 py-3 text-[13.5px] outline-none focus:border-accent"
               />
-              <p className="mt-2 text-[12px] text-text-faint">Cet objectif oriente les recommandations de l&rsquo;IA.</p>
+            </div>
+
+            <div className="mt-7">
+              <label className="mb-2 block text-[13px] font-semibold text-text">Vos problèmes aujourd&rsquo;hui</label>
+              <textarea
+                value={problems}
+                onChange={(e) => setProblems(e.target.value)}
+                placeholder="ex. Je ne sais pas quels clients me rapportent vraiment. Les paiements arrivent en retard."
+                rows={3}
+                className="w-full resize-none rounded-xl border-[1.5px] border-border-strong px-4 py-3 text-[13.5px] outline-none focus:border-accent"
+              />
+            </div>
+
+            <div className="mt-7">
+              <label className="mb-2 block text-[13px] font-semibold text-text">Ce qui, hors de l&rsquo;entreprise, influence votre résultat</label>
+              <textarea
+                value={externalFactors}
+                onChange={(e) => setExternalFactors(e.target.value)}
+                placeholder={groupInfo?.questions.length ? "ex. " + (sectorKey ? "salons, cours, réglementation, saison, taux de change…" : "") : ""}
+                rows={3}
+                className="w-full resize-none rounded-xl border-[1.5px] border-border-strong px-4 py-3 text-[13.5px] outline-none focus:border-accent"
+              />
+              {groupInfo && (
+                <ul className="mt-2.5 space-y-1 text-[12px] text-text-faint">
+                  {groupInfo.questions.map((q) => (
+                    <li key={q}>• {q}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           </>
         )}
 
-        {STEPS[step] === "Systèmes actuels" && (
+        {STEPS[step] === "Fonctions" && (
+          <>
+            <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
+              Que doit surveiller
+              <br />
+              l&rsquo;IA&nbsp;?
+            </h1>
+            <p className="mt-3.5 max-w-lg text-[15px] text-text-soft">Choisissez toutes les fonctions de l&rsquo;entreprise concernées. Chacune oriente les recommandations et les questions de l&rsquo;IA.</p>
+            <div className="mt-8 grid gap-2.5 sm:grid-cols-2">
+              {(catalog?.functions ?? []).map((f) => {
+                const on = functions.includes(f.key);
+                return (
+                  <button
+                    key={f.key}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggleFunction(f.key)}
+                    className={`rounded-xl border-[1.5px] px-4 py-3 text-left transition-colors ${on ? "border-accent bg-accent-soft" : "border-border-strong hover:border-text-faint"}`}
+                  >
+                    <span className={`block text-[13.5px] font-semibold ${on ? "text-accent-strong" : "text-text"}`}>{f.label}</span>
+                    <span className="mt-0.5 block text-[12px] text-text-faint">{f.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {STEPS[step] === "Outils" && (
           <>
             <h1 className="mt-3 font-display text-[30px] italic leading-tight md:text-[34px]">
-              Quels systèmes utilisez-vous
+              Sur quels outils
               <br />
-              aujourd&rsquo;hui&nbsp;?
+              travaillez-vous&nbsp;?
             </h1>
-            <p className="mt-3.5 max-w-lg text-[15px] text-text-soft">Indiquez vos outils actuels — nous préparerons les connexions correspondantes.</p>
-
-            <div className="mt-5 flex items-center gap-2.5 rounded-xl bg-surface-sunken p-3.5">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-text-soft">
-                <circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              <p className="text-[12.5px] text-text-soft">Ces connexions ne sont pas encore actives — vos réponses nous aident à préparer l&rsquo;intégration prochainement.</p>
+            <p className="mt-3.5 max-w-lg text-[15px] text-text-soft">
+              ERP, CRM, comptabilité, banque, BI, tableurs, bases de données… Plus l&rsquo;IA connaît vos outils, mieux elle sait où chercher vos données et quoi en faire.
+            </p>
+            <div className="mt-7">
+              {catalog ? (
+                <ToolsPicker tools={catalog.tools} categories={catalog.categories} selected={toolKeys} customTools={customTools} onChange={setToolKeys} onCustomChange={setCustomTools} />
+              ) : (
+                <p className="text-[13px] text-text-faint">{catalogError ?? "Chargement du catalogue…"}</p>
+              )}
             </div>
+          </>
+        )}
 
-            <div className="mt-6 grid grid-cols-2 gap-3.5 sm:grid-cols-3">
-              {SYSTEMS.map((sys) => (
-                <div key={sys.key} className={`flex flex-col gap-2.5 rounded-2xl border-[1.5px] p-4 ${systems[sys.key] ? "border-accent bg-accent-soft" : "border-border-strong"}`}>
-                  <div className="flex items-center justify-between">
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-[9px] ${systems[sys.key] ? "bg-accent text-white" : "bg-surface-sunken text-text-soft"}`}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
-                    </div>
-                    <Toggle on={!!systems[sys.key]} onChange={() => setSystems((s) => ({ ...s, [sys.key]: !s[sys.key] }))} label={sys.label} />
-                  </div>
-                  <div>
-                    <p className="text-[13.5px] font-semibold text-text">{sys.label}</p>
-                    <p className="mt-0.5 text-[11px] text-text-faint">{systems[sys.key] ? "Je l'utilise — connexion à venir" : "Non renseigné"}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-7 flex items-center justify-between rounded-xl border border-border px-4 py-3.5">
-              <span className="text-[13px] text-text-soft">Devise utilisée dans vos données</span>
-              <Badge label="EUR — Euro" tone="neutral" />
+        {STEPS[step] === "Vos données" && (
+          <>
+            <h1 className="mt-3 font-display text-[30px] italic leading-tight md:text-[34px]">
+              Faisons entrer
+              <br />
+              vos données
+            </h1>
+            <p className="mt-3.5 max-w-lg text-[15px] text-text-soft">
+              Pour chaque outil, voici comment l&rsquo;exporter et ce que l&rsquo;IA en fait. Les fichiers déposés sont lus pour de vrai et alimentent votre espace. Vous pouvez aussi y revenir plus tard.
+            </p>
+            <div className="mt-7">
+              <DataImport refreshKey={importRefresh} />
             </div>
           </>
         )}
@@ -331,14 +419,14 @@ export default function OnboardingWizard({
             </div>
 
             <div className="mt-9 divide-y divide-border rounded-2xl border border-border px-6">
-              <RecapRow label="Secteur d'activité" value={industry || "Non renseigné"} />
+              <RecapRow label="Secteur d'activité" value={sectorLabel || "Non renseigné"} />
               {!AUTH_REQUIRED && <RecapRow label="Votre profil" value={`${userName.trim() || "Moi"} · ${ROLE_LABEL[role]}`} />}
               <RecapRow label="Taille de l'entreprise" value={size} />
               <RecapRow label="Pays" value={COUNTRY_OPTIONS.find((c) => c.code === country)?.label ?? country} />
-              <RecapRow label="Fonctions surveillées" value={domains.map((d) => DOMAIN_OPTIONS.find((o) => o.value === d)?.label ?? d).join(" · ") || "Aucune"} />
+              <RecapRow label="Fonctions surveillées" value={functions.map((d) => catalog?.functions.find((o) => o.key === d)?.label ?? d).join(" · ") || "Aucune"} />
               <RecapRow
-                label="Systèmes à connecter"
-                value={Object.entries(systems).filter(([, v]) => v).map(([k]) => SYSTEMS.find((s) => s.key === k)?.label ?? k).join(" · ") || "Aucun"}
+                label="Outils déclarés"
+                value={[...toolKeys.map((k) => catalog?.tools.find((t) => t.key === k)?.label ?? k), ...customTools].join(" · ") || "Aucun"}
               />
             </div>
 
@@ -355,12 +443,12 @@ export default function OnboardingWizard({
               </button>
             )}
             <button type="button" onClick={skipToProduct} className="text-[13.5px] font-medium text-text-soft hover:text-text">
-              Passer pour l&rsquo;instant
+              Terminer plus tard
             </button>
           </div>
 
           {step < STEPS.length - 1 ? (
-            <Button onClick={() => setStep((s) => s + 1)}>
+            <Button onClick={next} loading={saving} disabled={!stepReady()}>
               Continuer
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
             </Button>

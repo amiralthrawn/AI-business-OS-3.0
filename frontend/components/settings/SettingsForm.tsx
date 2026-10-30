@@ -6,7 +6,7 @@ import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Chip from "@/components/ui/Chip";
-import Toggle from "@/components/ui/Toggle";
+import ConfigurationPanel from "@/components/configuration/ConfigurationPanel";
 import { updateBusinessContext, updateCompany } from "@/lib/api";
 import type { BusinessContextRead, CompanyRead, ConfigurationSuggestionRead } from "@/lib/types";
 
@@ -20,12 +20,18 @@ const COUNTRY_OPTIONS = [
   { code: "CH", label: "Suisse" },
 ];
 const DOMAIN_OPTIONS = [
-  { value: "finance", label: "Finance", enabled: true },
-  { value: "procurement", label: "Achats / Procurement", enabled: true },
-  { value: "sales", label: "Ventes", enabled: true },
-  { value: "hr", label: "Ressources humaines", enabled: false },
-  { value: "marketing", label: "Marketing", enabled: false },
-  { value: "supply_chain", label: "Supply Chain", enabled: false },
+  { value: "finance", label: "Finance et trésorerie" },
+  { value: "accounting", label: "Comptabilité et fiscalité" },
+  { value: "sales", label: "Ventes et clients" },
+  { value: "procurement", label: "Achats et fournisseurs" },
+  { value: "supply_chain", label: "Stock et supply chain" },
+  { value: "operations", label: "Production et opérations" },
+  { value: "hr", label: "Ressources humaines et paie" },
+  { value: "marketing", label: "Marketing et acquisition" },
+  { value: "customer_service", label: "Service client et support" },
+  { value: "legal", label: "Juridique et conformité" },
+  { value: "it", label: "Informatique et données" },
+  { value: "strategy", label: "Direction et stratégie" },
 ];
 const FOCUS_OPTIONS = [
   { value: "priorities", label: "Priorités IA" },
@@ -39,13 +45,6 @@ const NOTIFICATION_OPTIONS = [
   { value: "normal", label: "Normal" },
   { value: "high", label: "Élevé" },
 ];
-const SYSTEMS = [
-  { key: "erp", label: "ERP" },
-  { key: "crm", label: "CRM" },
-  { key: "accounting", label: "Comptabilité" },
-  { key: "ecommerce", label: "E-commerce" },
-  { key: "hr", label: "RH / Paie" },
-] as const;
 
 function SaveButton({ status, onClick }: { status: SaveStatus; onClick: () => void }) {
   return (
@@ -59,27 +58,19 @@ function SaveButton({ status, onClick }: { status: SaveStatus; onClick: () => vo
   );
 }
 
-function readSystemsFromStorage(): Record<string, boolean> {
-  if (typeof window === "undefined") return {};
-  try {
-    return JSON.parse(localStorage.getItem("aibos_systems") ?? "{}");
-  } catch {
-    return {};
-  }
-}
-
 export default function SettingsForm({
   company,
   context,
   suggestions,
+  canEdit,
 }: {
   company: CompanyRead;
   context: BusinessContextRead;
   suggestions: ConfigurationSuggestionRead[];
+  canEdit: boolean;
 }) {
   // Section 1 -- Profil
   const [name, setName] = useState(company.name);
-  const [industry, setIndustry] = useState(company.industry ?? "");
   const [size, setSize] = useState(context.company_size ?? "11–50");
   const [country, setCountry] = useState(context.country ?? "FR");
   const [profileStatus, setProfileStatus] = useState<SaveStatus>("idle");
@@ -100,9 +91,6 @@ export default function SettingsForm({
   const [notificationLevel, setNotificationLevel] = useState(context.notification_level);
   const [notificationStatus, setNotificationStatus] = useState<SaveStatus>("idle");
 
-  // Section 7 -- Systèmes (frontend-only)
-  const [systems, setSystems] = useState<Record<string, boolean>>(() => readSystemsFromStorage());
-
   function flash(setStatus: (s: SaveStatus) => void, ok: boolean) {
     setStatus(ok ? "saved" : "error");
     if (ok) setTimeout(() => setStatus("idle"), 2200);
@@ -112,7 +100,7 @@ export default function SettingsForm({
     setProfileStatus("saving");
     try {
       await Promise.all([
-        updateCompany({ name: name.trim(), industry: industry.trim() || undefined }),
+        updateCompany({ name: name.trim() }),
         updateBusinessContext({ company_size: size, country }),
       ]);
       flash(setProfileStatus, true);
@@ -162,18 +150,6 @@ export default function SettingsForm({
     }
   }
 
-  function toggleSystem(key: string) {
-    setSystems((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      try {
-        localStorage.setItem("aibos_systems", JSON.stringify(next));
-      } catch {
-        // Frontend-only preference -- fine to lose silently if storage is unavailable.
-      }
-      return next;
-    });
-  }
-
   return (
     <div className="max-w-3xl space-y-8">
       {suggestions.length > 0 && (
@@ -200,10 +176,6 @@ export default function SettingsForm({
           <div>
             <label className="mb-2 block text-[12.5px] font-semibold text-text-soft">Nom de l&rsquo;entreprise</label>
             <input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-xl border-[1.5px] border-border-strong px-3.5 py-2.5 text-[14px] outline-none focus:border-accent" />
-          </div>
-          <div>
-            <label className="mb-2 block text-[12.5px] font-semibold text-text-soft">Secteur d&rsquo;activité</label>
-            <input value={industry} onChange={(e) => setIndustry(e.target.value)} className="w-full rounded-xl border-[1.5px] border-border-strong px-3.5 py-2.5 text-[14px] outline-none focus:border-accent" />
           </div>
           <div>
             <label className="mb-2 block text-[12.5px] font-semibold text-text-soft">Taille de l&rsquo;entreprise</label>
@@ -236,7 +208,7 @@ export default function SettingsForm({
               key={opt.value}
               label={opt.label}
               selected={domains.includes(opt.value)}
-              onClick={opt.enabled ? () => setDomains((d) => (d.includes(opt.value) ? d.filter((x) => x !== opt.value) : [...d, opt.value])) : undefined}
+              onClick={() => setDomains((d) => (d.includes(opt.value) ? d.filter((x) => x !== opt.value) : [...d, opt.value]))}
             />
           ))}
         </div>
@@ -303,38 +275,10 @@ export default function SettingsForm({
           <span className="text-[13px] text-text-soft">Devise utilisée dans vos données</span>
           <Badge label="EUR — Euro" tone="neutral" />
         </div>
-        <p className="mt-2.5 text-[12px] text-text-faint">La prise en charge d&rsquo;autres devises n&rsquo;est pas encore disponible.</p>
+        <p className="mt-2.5 text-[12px] text-text-faint">Les montants sont affichés en euros.</p>
       </Card>
 
-      <Card className="p-7">
-        <div className="flex items-center justify-between">
-          <span className="text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Systèmes connectés</span>
-          <Badge label="Configuration seulement — aucune intégration active" tone="neutral" />
-        </div>
-        <div className="mt-4 divide-y divide-border">
-          {SYSTEMS.map((sys) => (
-            <div key={sys.key} className="flex items-center justify-between py-3.5">
-              <div className="flex items-center gap-3">
-                <div className={`flex h-9 w-9 items-center justify-center rounded-[10px] ${systems[sys.key] ? "bg-accent-soft text-accent-strong" : "bg-surface-sunken text-text-faint"}`}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="4" width="18" height="16" rx="2" /><line x1="3" y1="10" x2="21" y2="10" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-[13.5px] font-semibold text-text">{sys.label}</p>
-                  <p className="text-[11.5px] text-text-faint">{systems[sys.key] ? "Signalé — connexion à venir" : "Non connecté"}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <button type="button" disabled className="cursor-not-allowed rounded-lg border-[1.5px] border-border px-3 py-1.5 text-[12px] font-semibold text-text-faint">
-                  Bientôt disponible
-                </button>
-                <Toggle on={!!systems[sys.key]} onChange={() => toggleSystem(sys.key)} label={sys.label} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <ConfigurationPanel canEdit={canEdit} />
 
       {context.learned_notes.length > 0 && (
         <Card className="p-7">

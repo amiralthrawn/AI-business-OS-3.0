@@ -39,6 +39,7 @@ class GetBusinessStateSnapshotOutput(BaseModel):
     generated_at: str
     monitored_domains: list[str]
     stated_objectives: str | None
+    company_profile: dict | None = None
     open_risks_count: int
     open_opportunities_count: int
     pending_validation_tasks: int
@@ -67,6 +68,12 @@ def _dump_area(area: SnapshotArea) -> SnapshotAreaOutput:
     )
 
 
+def _company_profile(session: Session, company_id) -> dict:
+    from app.configuration.service import ai_profile, get_configuration
+
+    return ai_profile(get_configuration(session, company_id))
+
+
 def _execute(
     session: Session, _event_bus: EventBus | None, _data: GetBusinessStateSnapshotInput
 ) -> GetBusinessStateSnapshotOutput:
@@ -90,6 +97,7 @@ def _execute(
         generated_at=snapshot.generated_at.isoformat(),
         monitored_domains=snapshot.monitored_domains,
         stated_objectives=snapshot.stated_objectives,
+        company_profile=_company_profile(session, company.id),
         open_risks_count=snapshot.open_risks_count,
         open_opportunities_count=snapshot.open_opportunities_count,
         pending_validation_tasks=snapshot.pending_validation_tasks,
