@@ -1,0 +1,1 @@
+"""Business domain modules (Finance, Procurement, CRM, Sales, Marketing, HR, Supply Chain). Each reads/writes the shared Data Core and publishes Business Events; none stores its own copy of a core entity. Logic is added incrementally, starting with Procurement."""
