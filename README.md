@@ -232,6 +232,10 @@ The backend reads `.env` at the repository root. Every value is optional for a l
 | `OPENAI_MODEL` | Model used when a key is set | `gpt-4o-mini` |
 | `ALLOWED_ORIGINS` | CORS origins for a deployed frontend. Empty = any `localhost` / `127.0.0.1` port | empty |
 | `BRAVE_SEARCH_API_KEY` | Enables real web search in supplier sourcing. Empty = internal data only, and the run says so | empty |
+| `AUTH_SECRET_KEY` | **Required** (V3 sign-in): signs access tokens. Generate one with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. The API refuses to start without it | empty |
+| `AUTH_MODE` | `required` (sign-in, one space per company) or `legacy` (V2 demo: no sign-in, profile switcher). With `legacy`, also set `NEXT_PUBLIC_AUTH_MODE=legacy` in `frontend/.env.local` | `required` |
+| `SIGNUP_ENABLED` | Lets new companies create their space at `/signup` | `true` |
+| `FRONTEND_URL` | Frontend URL used in invitation links | `http://localhost:3000` |
 
 The frontend calls `http://localhost:8000` by default. To point it elsewhere, set `NEXT_PUBLIC_API_URL` in `frontend/.env.local` (template: [`frontend/.env.example`](frontend/.env.example); never committed); Next.js does not read the root `.env`. The value is compiled into the browser bundle when `npm run dev` starts, so **restart `npm run dev` after changing it**. The terminal prints `[AI Business OS] Browser API URL: …` at startup so you can check it.
 
@@ -245,6 +249,8 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m data.seed
 cd ..
 ```
+
+Then open the app, create your company's space at `/signup`, and invite your colleagues from **Configuration → Équipe et accès**. To sign in to the seeded demo company instead, give its director a password: `.\.venv\Scripts\python.exe -m app.auth.cli --name "Camille Laurent" --email <email>`.
 
 Calling the virtual environment's `python.exe` directly avoids PowerShell's script execution policy for `Activate.ps1`. The seed is **idempotent**: it loads the V1 demo company, then the V2 deals and the V2.1 simulated data, and re-running it skips what already exists.
 
@@ -326,6 +332,9 @@ The repository runs as two Render web services from the same GitHub repository. 
 | Start command | `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
 | `DATABASE_URL` | The Render PostgreSQL **internal** URL (recommended), or `sqlite:////var/data/data_core.db` with a persistent disk mounted on `/var/data`. Without one of them, data is lost at each deploy. |
 | `ALLOWED_ORIGINS` | The frontend URL, e.g. `https://<frontend>.onrender.com` (comma-separated if several). When set, only these origins are accepted: no `localhost`, no tunnels. |
+| `AUTH_SECRET_KEY` | **Required.** A long random secret signing the access tokens (`python -c "import secrets; print(secrets.token_urlsafe(48))"`). |
+| `FRONTEND_URL` | The frontend URL, used in invitation links. |
+| `SIGNUP_ENABLED` | `false` to stop new companies from signing up on their own. |
 | `OPENAI_API_KEY`, `BRAVE_SEARCH_API_KEY` | Optional. |
 
 Load the demo data once, from the backend service's shell: `python -m data.seed` (idempotent).
@@ -338,12 +347,12 @@ Load the demo data once, from the backend service's shell: `python -m data.seed`
 | Start command | `npm run start -- -p $PORT` |
 | `NEXT_PUBLIC_API_URL` | The backend URL, e.g. `https://<backend>.onrender.com`. It is compiled into the build: change it, then redeploy. |
 
-The migrations and the full demo seed were validated on PostgreSQL as well as SQLite. The access-control limitation below applies: identity is not verified, so keep a public deployment for supervised demos.
+The migrations and the full demo seed were validated on PostgreSQL as well as SQLite. Since V3, every page and API call requires a signed-in user and only sees that user's company (see [`brain/permissions.md`](brain/permissions.md)); the seeded demo company has no account until you give its director a password: `python -m app.auth.cli --name "Camille Laurent" --email <email>`.
 
 ## Testing and quality checks
 
 ```powershell
-# Backend: 390 tests at the time of writing
+# Backend: 406 tests at the time of writing
 cd backend
 .\.venv\Scripts\python.exe -m pytest -q
 cd ..
@@ -376,8 +385,8 @@ This is an MVP. The following are deliberate, documented limits, not hidden gaps
 
 ### Functional limits
 
-- **No authentication.** The current user is selected with a profile switcher (an `X-User-Id` header). A request without that header runs in a legacy director mode. Permissions are enforced by the backend, but identity is **not verified**, so do not expose the app publicly beyond short supervised demos.
-- **Single company.** The backend assumes one `Company` row (no multi-tenancy).
+- **Sign-in (V3).** Email + password accounts, a director invites colleagues by a single-use link (shown to the director to share: invitation emails are not sent yet). No single sign-on (Google / Microsoft), no password reset by email and no rate limiting on sign-in yet. `AUTH_MODE=legacy` brings back the V2 demo mode without sign-in.
+- **Several companies per database (V3).** Every ORM query of a signed-in request is filtered to the user's company (`app/core/tenant_scope.py`); PostgreSQL row-level security is not enabled as a second barrier yet.
 - **Marketing and campaign metrics** are mostly unavailable. There is no budget object and no link between inbound requests and a campaign, so ROI, cost per prospect and attribution are shown as "not available".
 - **Reply and follow-up detection** relies on thread keys and contacts. Mailbox classification relies on keywords and links, so some messages (newsletters, spam) are classified as needing a reply.
 - **No scheduler.** Follow-ups and observations are computed on read or on demand, and nothing is sent automatically.

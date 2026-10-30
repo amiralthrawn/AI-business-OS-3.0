@@ -5,7 +5,7 @@
 export type ValueBasis = "observed" | "declared" | "estimated" | "benchmark" | "simulated" | "unknown";
 export type Confidence = "high" | "medium" | "low" | "none";
 
-export type Role = "director" | "sales" | "procurement" | "operations" | "hr" | "employee";
+export type Role = "director" | "sales" | "procurement" | "operations" | "hr" | "employee" | "accountant";
 
 export interface UserProfileRead {
   id: string;
@@ -17,6 +17,47 @@ export interface UserProfileRead {
   access_grants: string[];
   access_revokes: string[];
   permissions: string[];
+  // V3: position, company-defined role and sign-in account state.
+  job_title: string | null;
+  custom_role_id: string | null;
+  custom_role_name: string | null;
+  account_status: "active" | "invited" | "no_access";
+  last_login_at: string | null;
+}
+
+export interface CustomRoleRead {
+  id: string;
+  name: string;
+  description: string | null;
+  base_role: Role;
+  access_grants: string[];
+  access_revokes: string[];
+  permissions: string[];
+  members: number;
+}
+
+export interface CustomRoleWrite {
+  name?: string;
+  description?: string | null;
+  base_role?: Role;
+  access_grants?: string[];
+  access_revokes?: string[];
+}
+
+export interface SessionRead {
+  access_token: string;
+  token_type: string;
+  profile_id: string;
+  company_id: string;
+  name: string;
+  role: Role;
+}
+
+export interface InvitationRead {
+  name: string;
+  email: string | null;
+  company_name: string;
+  job_title: string | null;
 }
 
 export interface MeRead {

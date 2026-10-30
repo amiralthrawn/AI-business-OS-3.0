@@ -4,14 +4,14 @@ import SettingsForm from "@/components/settings/SettingsForm";
 import UsersAndRoles from "@/components/settings/UsersAndRoles";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import PageHeader from "@/components/ui/PageHeader";
-import { getAccessCatalog, getBusinessContext, getCompany, getConfigurationSuggestions, getMe, getRoles, getUsers } from "@/lib/api";
+import { getAccessCatalog, getBusinessContext, getCompany, getConfigurationSuggestions, getCustomRoles, getMe, getRoles, getUsers } from "@/lib/api";
 import { can } from "@/lib/objects";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   let error: string | null = null;
-  const [company, context, suggestions, users, roles, me, catalog] = await Promise.all([
+  const [company, context, suggestions, users, roles, me, catalog, customRoles] = await Promise.all([
     getCompany().catch(() => null),
     getBusinessContext().catch(() => null),
     getConfigurationSuggestions().catch(() => []),
@@ -19,6 +19,7 @@ export default async function SettingsPage() {
     getRoles().catch(() => []),
     getMe().catch(() => null),
     getAccessCatalog().catch(() => null),
+    getCustomRoles().catch(() => []),
   ]);
 
   if (!company || !context) {
@@ -43,8 +44,8 @@ export default async function SettingsPage() {
       {error && <ErrorBanner message={error} />}
       {company && context && <SettingsForm company={company} context={context} suggestions={suggestions} />}
       <section>
-        <SectionLabel id="profils">Profils et rôles</SectionLabel>
-        <UsersAndRoles users={users} roles={roles} catalog={catalog} canManage={can(me?.permissions, "write:settings")} selfId={me?.profile?.id ?? null} />
+        <SectionLabel id="profils">Équipe et accès</SectionLabel>
+        <UsersAndRoles users={users} roles={roles} customRoles={customRoles} catalog={catalog} canManage={can(me?.permissions, "write:settings")} selfId={me?.profile?.id ?? null} />
       </section>
     </main>
   );

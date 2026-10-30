@@ -1,11 +1,52 @@
+import uuid
 from typing import Callable
 
 from sqlalchemy.orm import Session
 
+from app.core.entities import (
+    CommercialDocument,
+    Communication,
+    Company,
+    Customer,
+    Opportunity,
+    Product,
+    Risk,
+    Supplier,
+    Task,
+)
 from app.core.entities.event_log import EventLogEntry
 from app.core.events.bus import EventHandler
 from app.core.events.business_event import BusinessEvent
 from app.core.events.subjects import infer_subject
+from app.core.events.tenant import publishing_company
+
+_SUBJECT_MODELS = {
+    "commercial_document": CommercialDocument,
+    "communication": Communication,
+    "customer": Customer,
+    "opportunity": Opportunity,
+    "product": Product,
+    "risk": Risk,
+    "supplier": Supplier,
+    "task": Task,
+}
+
+
+def _event_company(session: Session, subject_type: str | None, subject_id: uuid.UUID | None) -> uuid.UUID | None:
+    """The company publishing the event (a signed-in request, V3); else the
+    company of the object it is about; else the only company there is (seed
+    scripts, the legacy single-company mode). Unknown otherwise."""
+
+    company_id = publishing_company()
+    if company_id is not None:
+        return company_id
+    model = _SUBJECT_MODELS.get(subject_type or "")
+    if model is not None and subject_id is not None:
+        subject = session.get(model, subject_id)
+        if subject is not None:
+            return subject.company_id
+    companies = session.query(Company.id).limit(2).all()
+    return companies[0][0] if len(companies) == 1 else None
 
 
 def make_event_log_handler(session_factory: Callable[[], Session]) -> EventHandler:
@@ -33,6 +74,7 @@ def make_event_log_handler(session_factory: Callable[[], Session]) -> EventHandl
                     occurred_at=event.occurred_at,
                     subject_type=subject_type,
                     subject_id=subject_id,
+                    company_id=_event_company(session, subject_type, subject_id),
                 )
             )
             session.commit()

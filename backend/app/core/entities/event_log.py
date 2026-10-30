@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, String, Uuid
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.entities.base import Base, IdMixin, TimestampMixin
@@ -27,3 +27,6 @@ class EventLogEntry(Base, IdMixin, TimestampMixin):
     # query instead of a payload scan. Null when no subject can be derived.
     subject_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
     subject_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    # V3: the company the event belongs to (app.core.events.tenant). Null only
+    # for events logged before V3 in a database holding several companies.
+    company_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("companies.id"), nullable=True, index=True)
