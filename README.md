@@ -1,4 +1,4 @@
-# AI Business OS 2.0
+# AI Business OS 3.0
 
 **A decision-and-action operating system for small and mid-size companies.**
 
@@ -6,12 +6,32 @@ AI Business OS gives a company one place that says, in plain language, *what is 
 
 Most business software either stores records (ERP, CRM) or charts them (BI dashboards). AI Business OS aims at a third thing: it connects operational data, business objects and transactions, detects what deserves attention, and turns it into concrete, explainable decisions and actions, with a human always in the loop.
 
-> **Project status:** a working MVP built incrementally as a technical portfolio project. This README describes what is **implemented today**, not a target design. Everything simulated or not yet connected is listed in [Limitations and honesty](#limitations-and-honesty). Every non-obvious design choice is recorded in [`brain/decisions.md`](brain/decisions.md).
+> **Project status:** version 3.0, the first step toward a sellable V1. On top of the 2.0 MVP it adds real accounts (sign-in, invitations), one isolated space per company, and roles the director configures. The AI-led onboarding, connectors and the two agents come next. This README describes what is **implemented today**, not a target design. Everything simulated or not yet connected is listed in [Limitations and honesty](#limitations-and-honesty). Every non-obvious design choice is recorded in [`brain/decisions.md`](brain/decisions.md).
+
+
+## Démarrer en local (Windows)
+
+1. Installez **Python 3.10+** et **Node.js 20.9+** (une seule fois).
+2. Récupérez la dernière version du dépôt (`git pull`, ou « Fetch / Pull » dans GitHub Desktop).
+3. Double-cliquez sur **`start.bat`**. Au premier lancement il prépare tout seul : fichier `.env` avec sa clé secrète, dépendances Python et Node, base de données. Cela prend quelques minutes, les fois suivantes quelques secondes.
+4. Le navigateur s'ouvre sur `http://localhost:3000`. Cliquez sur **« Créer un compte »** : vous créez l'espace de votre entreprise et vous en êtes la direction.
+5. Invitez ensuite votre équipe dans **Configuration → Équipe et accès**.
+
+Pour arrêter, fermez les deux fenêtres « backend » et « frontend ».
+
+## What's new in 3.0
+
+- **Accounts:** sign-up for a new company, sign-in, single-use invitation links. Passwords hashed with scrypt, 12-hour signed sessions.
+- **One space per company:** every query and every Event Log entry is scoped to the signed-in company.
+- **Roles the director controls:** new base role *Comptabilité*, company-specific job roles, and per-person access grants and revocations.
+- **One-click launch:** `start.bat` now creates `.env`, installs dependencies and migrates the database by itself.
 
 ---
 
 ## Table of contents
 
+- [Démarrer en local (Windows)](#démarrer-en-local-windows)
+- [What's new in 3.0](#whats-new-in-30)
 - [Vision](#vision)
 - [From V1 to V2: what fundamentally changed](#from-v1-to-v2-what-fundamentally-changed)
 - [Design principles](#design-principles)
@@ -270,7 +290,7 @@ cd ..
 .\start.ps1
 ```
 
-It starts the backend and the frontend in their own windows and opens the browser once the frontend responds. If a port is already in use, it skips that server and says so. Closing the launcher window does not stop the servers; close their windows (or press Ctrl+C in them).
+On each run it first prepares what is missing (creates `.env` and its `AUTH_SECRET_KEY`, the virtual environment, `pip install` / `npm install` when the dependency files changed, `alembic upgrade head`), so steps 1 to 3 above are optional with the launcher. It then starts the backend and the frontend in their own windows and opens the browser once the frontend responds. If a port is already in use, it skips that server and says so. Closing the launcher window does not stop the servers; close their windows (or press Ctrl+C in them).
 
 **Option B: manual, two terminals.**
 
