@@ -61,6 +61,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   operations: "Opérations",
   hr: "RH",
   employee: "Employé",
+  accountant: "Comptabilité",
 };
 
 const number = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });

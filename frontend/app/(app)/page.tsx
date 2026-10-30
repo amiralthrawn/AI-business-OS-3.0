@@ -14,7 +14,8 @@ import EmptyState from "@/components/ui/EmptyState";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import PageHeader from "@/components/ui/PageHeader";
 import StatCard from "@/components/ui/StatCard";
-import { getFinanceOverview, getHomeView } from "@/lib/api";
+import { getCompany, getFinanceOverview, getHomeView, getMe } from "@/lib/api";
+import { can } from "@/lib/objects";
 import { NARRATIVE_PROPOSAL_CHANNEL_DETAILS } from "@/lib/labels";
 import { monthOverMonth, monthlySpark } from "@/lib/series";
 import type { AIPriorityItem, FinanceOverview, HomeResponse } from "@/lib/types";
@@ -56,6 +57,11 @@ export default async function CommandCenterPage() {
     error = "Impossible de joindre le backend. L'API est-elle démarrée ?";
   }
 
+  // V3: only someone who manages the company (write:settings) is sent to
+  // the initial setup, and only while the company has not declared its sector.
+  const [me, company] = await Promise.all([getMe().catch(() => null), getCompany().catch(() => null)]);
+  const needsSetup = !!company && !company.industry && can(me?.permissions, "write:settings");
+
   let finance: FinanceOverview | null = null;
   if (home) {
     finance = await getFinanceOverview().catch(() => null);
@@ -68,7 +74,7 @@ export default async function CommandCenterPage() {
 
   return (
     <main className="space-y-14 p-8 md:p-12">
-      <OnboardingGate />
+      <OnboardingGate needsSetup={needsSetup} />
 
       <PageHeader
         title="Bonjour."

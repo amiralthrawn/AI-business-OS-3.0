@@ -1,3 +1,10 @@
+import os
+
+# The V2 suite runs in the legacy (no sign-in, single company) mode; the V3
+# auth and tenant tests switch to "required" themselves (tests/test_v3_auth.py).
+os.environ.setdefault("AUTH_MODE", "legacy")
+os.environ.setdefault("AUTH_SECRET_KEY", "test-secret-key-not-for-production-0123456789")
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

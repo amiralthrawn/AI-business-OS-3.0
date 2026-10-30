@@ -27,6 +27,10 @@ import type {
   TransactionRead,
   // V2.1
   AccessCatalog,
+  CustomRoleRead,
+  CustomRoleWrite,
+  InvitationRead,
+  SessionRead,
   AIRunView,
   CandidateRow,
   ComplianceRecommendation,
@@ -78,40 +82,65 @@ import type {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-// V2 roles (brain/permissions.md): every call carries the selected user
-// profile as `X-User-Id`. The profile id lives in the `aibos_user` cookie;
-// in the browser it is read from document.cookie, and on the server a
-// resolver registered by `lib/server-user.ts` (imported by the root layout)
-// reads it from the incoming request -- so Server and Client Components share
-// this one API client. No cookie = the backend's legacy single-operator mode.
+// V3 sign-in (brain/permissions.md): every call carries the signed-in
+// user's access token as `Authorization: Bearer ...`. The token lives in the
+// `aibos_session` cookie; in the browser it is read from document.cookie, and
+// on the server a resolver registered by `lib/server-user.ts` (imported by the
+// root layout) reads it from the incoming request -- so Server and Client
+// Components share this one API client. The backend scopes every call to the
+// token's company.
+//
+// The V2 profile switcher (`aibos_user` cookie sent as `X-User-Id`) is kept
+// for the legacy demo mode only (NEXT_PUBLIC_AUTH_MODE=legacy); the backend
+// ignores it once sign-in is required.
+export const SESSION_COOKIE = "aibos_session";
 export const USER_COOKIE = "aibos_user";
+export const AUTH_REQUIRED = process.env.NEXT_PUBLIC_AUTH_MODE !== "legacy";
 
-type UserIdResolver = () => Promise<string | null> | string | null;
+type CookieResolver = (name: string) => Promise<string | null> | string | null;
 
-function readBrowserCookie(): string | null {
+function readBrowserCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
-  const match = document.cookie.split("; ").find((c) => c.startsWith(`${USER_COOKIE}=`));
-  return match ? decodeURIComponent(match.split("=")[1]) : null;
+  const match = document.cookie.split("; ").find((c) => c.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : null;
 }
 
-let resolveUserId: UserIdResolver = readBrowserCookie;
+let resolveCookie: CookieResolver = readBrowserCookie;
 
-/** Selects (or clears, with null) the profile every following call acts as. */
+/** Selects (or clears, with null) the profile every following call acts as (legacy demo mode). */
 export function setSelectedProfile(id: string | null) {
   document.cookie = id
     ? `${USER_COOKIE}=${encodeURIComponent(id)}; path=/; max-age=31536000; samesite=lax`
     : `${USER_COOKIE}=; path=/; max-age=0`;
 }
 
-export function setServerUserIdResolver(resolver: UserIdResolver) {
-  if (typeof window === "undefined") resolveUserId = resolver;
+/** Stores (or clears, with null) the signed-in session's access token. */
+export function setSessionToken(token: string | null) {
+  const secure = typeof location !== "undefined" && location.protocol === "https:" ? "; secure" : "";
+  document.cookie = token
+    ? `${SESSION_COOKIE}=${encodeURIComponent(token)}; path=/; max-age=${12 * 3600}; samesite=lax${secure}`
+    : `${SESSION_COOKIE}=; path=/; max-age=0`;
+}
+
+export function setServerCookieResolver(resolver: CookieResolver) {
+  if (typeof window === "undefined") resolveCookie = resolver;
 }
 
 async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const userId = await resolveUserId();
   const headers = new Headers(init.headers);
-  if (userId) headers.set("X-User-Id", userId);
-  return fetch(url, { ...init, headers });
+  const token = await resolveCookie(SESSION_COOKIE);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (!AUTH_REQUIRED) {
+    const userId = await resolveCookie(USER_COOKIE);
+    if (userId) headers.set("X-User-Id", userId);
+  }
+  const res = await fetch(url, { ...init, headers });
+  // An expired or revoked session in the browser: back to the sign-in page.
+  if (res.status === 401 && AUTH_REQUIRED && typeof window !== "undefined" && !url.includes("/auth/")) {
+    setSessionToken(null);
+    window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname)}`);
+  }
+  return res;
 }
 
 async function getJSON<T>(path: string, notFoundMessage: string): Promise<T> {
@@ -294,10 +323,36 @@ function query(params: Record<string, string | number | boolean | string[] | und
 export const getMe = () => getJSON<MeRead>("/users/me", "Profil introuvable");
 export const getUsers = () => getJSON<UserProfileRead[]>("/users", "Profils introuvables");
 export const getRoles = () => getJSON<RoleRead[]>("/users/roles", "Rôles introuvables");
-export const createUser = (payload: { name: string; email?: string; role: Role }) =>
+export const createUser = (payload: { name: string; email?: string; role?: Role; job_title?: string; custom_role_id?: string }) =>
   sendJSON<UserProfileRead>("POST", "/users", payload, "Impossible de créer le profil");
-export const updateUser = (id: string, payload: Partial<Pick<UserProfileRead, "name" | "email" | "role" | "is_active">>) =>
-  sendJSON<UserProfileRead>("PATCH", `/users/${id}`, payload, "Impossible de modifier le profil");
+export const updateUser = (
+  id: string,
+  payload: Partial<Pick<UserProfileRead, "name" | "email" | "role" | "is_active" | "job_title" | "custom_role_id" | "access_grants" | "access_revokes">>,
+) => sendJSON<UserProfileRead>("PATCH", `/users/${id}`, payload, "Impossible de modifier le profil");
+export const inviteUser = (id: string) =>
+  sendJSON<{ invite_url: string; expires_at: string }>("POST", `/users/${id}/invite`, undefined, "Impossible de créer l'invitation");
+
+// V3 -- roles a director defines for the company
+export const getCustomRoles = () => getJSON<CustomRoleRead[]>("/users/custom-roles", "Rôles introuvables");
+export const createCustomRole = (payload: CustomRoleWrite) =>
+  sendJSON<CustomRoleRead>("POST", "/users/custom-roles", payload, "Impossible de créer le rôle");
+export const updateCustomRole = (id: string, payload: CustomRoleWrite) =>
+  sendJSON<CustomRoleRead>("PATCH", `/users/custom-roles/${id}`, payload, "Impossible de modifier le rôle");
+export async function deleteCustomRole(id: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/users/custom-roles/${id}`, { method: "DELETE", cache: "no-store" });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(typeof detail?.detail === "string" ? detail.detail : `Impossible de supprimer le rôle (${res.status})`);
+  }
+}
+
+// V3 -- sign-up, sign-in, invitations (public routes)
+export const signup = (payload: { company_name: string; name: string; email: string; password: string }) =>
+  sendJSON<SessionRead>("POST", "/auth/signup", payload, "Création du compte impossible");
+export const login = (payload: { email: string; password: string }) => sendJSON<SessionRead>("POST", "/auth/login", payload, "Connexion impossible");
+export const getInvitation = (token: string) => getJSON<InvitationRead>(`/auth/invitations/${encodeURIComponent(token)}`, "Invitation invalide ou expirée");
+export const acceptInvitation = (token: string, payload: { password: string; name?: string }) =>
+  sendJSON<SessionRead>("POST", `/auth/invitations/${encodeURIComponent(token)}/accept`, payload, "Impossible d'accepter l'invitation");
 
 // Objects & relations
 export const getObjectContext = (type: ObjectType, id: string) =>

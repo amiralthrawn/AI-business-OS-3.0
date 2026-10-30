@@ -28,7 +28,7 @@ from app.core.entities.supplier import Supplier
 from app.core.entities.task import Task, TaskStatus
 from app.core.entities.treasury import BankAccount, CashMovement, Shareholder
 from app.core.entities.transaction import Transaction, TransactionStatus, TransactionType
-from app.core.entities.user import Role, UserProfile
+from app.core.entities.user import CustomRole, Role, UserProfile
 
 __all__ = [
     "Base",
@@ -70,6 +70,7 @@ __all__ = [
     "ObjectLink",
     "Role",
     "UserProfile",
+    "CustomRole",
     # V2.1
     "Employee",
     "EmployeeCostItem",

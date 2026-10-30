@@ -6,7 +6,7 @@ import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Chip from "@/components/ui/Chip";
 import Toggle from "@/components/ui/Toggle";
-import { createUser, setSelectedProfile, updateBusinessContext, updateCompany } from "@/lib/api";
+import { AUTH_REQUIRED, createUser, setSelectedProfile, updateBusinessContext, updateCompany } from "@/lib/api";
 import { ROLE_LABEL } from "@/lib/objects";
 import type { BusinessContextRead, CompanyRead, Role } from "@/lib/types";
 
@@ -50,7 +50,9 @@ const ROLE_OPTIONS: { role: Role; hint: string }[] = [
   { role: "employee", hint: "Consultation et tâches" },
 ];
 
-const STEPS = ["Entreprise", "Organisation", "Systèmes actuels", "Votre rôle", "Récapitulatif"];
+// V3: the signed-in person already has their account and role (created at
+// sign-up), so the role step only exists in the legacy demo mode.
+const STEPS = ["Entreprise", "Organisation", "Systèmes actuels", ...(AUTH_REQUIRED ? [] : ["Votre rôle"]), "Récapitulatif"];
 
 export default function OnboardingWizard({
   initialCompany,
@@ -65,7 +67,8 @@ export default function OnboardingWizard({
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState(initialCompany?.name ?? "");
-  const [industry, setIndustry] = useState(initialCompany?.industry || DEFAULT_SECTOR);
+  // V3: the company declares its own sector; the V2 demo default stays for legacy mode.
+  const [industry, setIndustry] = useState(initialCompany?.industry || (AUTH_REQUIRED ? "" : DEFAULT_SECTOR));
   const [userName, setUserName] = useState("");
   const [role, setRole] = useState<Role>("director");
   const [size, setSize] = useState(initialContext?.company_size ?? "11–50");
@@ -98,8 +101,10 @@ export default function OnboardingWizard({
       ]);
       // Second part: the person and their role -> a profile selected for
       // every following API call (cookie read by lib/api.ts).
-      const profile = await createUser({ name: userName.trim() || "Moi", role });
-      setSelectedProfile(profile.id);
+      if (!AUTH_REQUIRED) {
+        const profile = await createUser({ name: userName.trim() || "Moi", role });
+        setSelectedProfile(profile.id);
+      }
       localStorage.setItem("aibos_onboarding_done", "1");
       localStorage.setItem("aibos_systems", JSON.stringify(systems));
       router.push("/");
@@ -130,7 +135,7 @@ export default function OnboardingWizard({
       <div key={step} className="animate-reveal mt-12 w-full max-w-[640px] rounded-[20px] border border-border bg-surface p-10 shadow-card md:p-14">
         <p className="text-[12.5px] font-semibold uppercase tracking-wide text-accent-strong">Configuration initiale</p>
 
-        {step === 0 && (
+        {STEPS[step] === "Entreprise" && (
           <>
             <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
               Configurons votre
@@ -178,7 +183,7 @@ export default function OnboardingWizard({
           </>
         )}
 
-        {step === 1 && (
+        {STEPS[step] === "Organisation" && (
           <>
             <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
               Comment est organisée
@@ -232,7 +237,7 @@ export default function OnboardingWizard({
           </>
         )}
 
-        {step === 2 && (
+        {STEPS[step] === "Systèmes actuels" && (
           <>
             <h1 className="mt-3 font-display text-[30px] italic leading-tight md:text-[34px]">
               Quels systèmes utilisez-vous
@@ -272,7 +277,7 @@ export default function OnboardingWizard({
           </>
         )}
 
-        {step === 3 && (
+        {STEPS[step] === "Votre rôle" && (
           <>
             <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
               Et vous, quel est
@@ -310,7 +315,7 @@ export default function OnboardingWizard({
           </>
         )}
 
-        {step === 4 && (
+        {STEPS[step] === "Récapitulatif" && (
           <>
             <div className="flex flex-col items-center text-center">
               <div className="animate-pop flex h-[52px] w-[52px] items-center justify-center rounded-full bg-success">
@@ -327,7 +332,7 @@ export default function OnboardingWizard({
 
             <div className="mt-9 divide-y divide-border rounded-2xl border border-border px-6">
               <RecapRow label="Secteur d'activité" value={industry || "Non renseigné"} />
-              <RecapRow label="Votre profil" value={`${userName.trim() || "Moi"} · ${ROLE_LABEL[role]}`} />
+              {!AUTH_REQUIRED && <RecapRow label="Votre profil" value={`${userName.trim() || "Moi"} · ${ROLE_LABEL[role]}`} />}
               <RecapRow label="Taille de l'entreprise" value={size} />
               <RecapRow label="Pays" value={COUNTRY_OPTIONS.find((c) => c.code === country)?.label ?? country} />
               <RecapRow label="Fonctions surveillées" value={domains.map((d) => DOMAIN_OPTIONS.find((o) => o.value === d)?.label ?? d).join(" · ") || "Aucune"} />

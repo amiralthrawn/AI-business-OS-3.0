@@ -92,6 +92,14 @@ ROLE_PERMISSIONS: dict[Role, frozenset[str]] = {
         }
     ),  # fmt: skip
     Role.EMPLOYEE: frozenset({VIEW_CATALOG, VIEW_COMMUNICATIONS, VIEW_ACTIONS, ACTION_ASK_AI}),
+    # V3: receivables, payables and invoices. Like every sensitive area,
+    # treasury stays director-only by default: a director grants it.
+    Role.ACCOUNTANT: frozenset(
+        {
+            VIEW_SALES, VIEW_PROCUREMENT, VIEW_FINANCE, VIEW_COMMUNICATIONS, VIEW_INTELLIGENCE, VIEW_ACTIONS,
+            WRITE_FINANCE, ACTION_SUBMIT_EMAIL, ACTION_APPROVE, ACTION_ASK_AI,
+        }
+    ),  # fmt: skip
 }
 
 # Which HITL proposals a role may approve, by Task.domain. The director
@@ -101,6 +109,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[str]] = {
 _APPROVAL_DOMAINS: dict[Role, frozenset[str]] = {
     Role.SALES: frozenset({"sales", "marketing"}),
     Role.PROCUREMENT: frozenset({"procurement", "operations"}),
+    Role.ACCOUNTANT: frozenset({"finance"}),
 }
 
 _ROLE_LABELS: dict[Role, tuple[str, str]] = {  # (French, English)
@@ -110,6 +119,7 @@ _ROLE_LABELS: dict[Role, tuple[str, str]] = {  # (French, English)
     Role.OPERATIONS: ("Opérations", "Operations"),
     Role.HR: ("RH", "HR"),
     Role.EMPLOYEE: ("Employé", "Employee"),
+    Role.ACCOUNTANT: ("Comptabilité", "Accounting"),
 }
 
 
@@ -169,13 +179,32 @@ def role_defaults(role: Role) -> frozenset[str]:
     return ROLE_PERMISSIONS.get(role, frozenset())
 
 
+def _apply(base: frozenset[str], grants: list[str] | None, revokes: list[str] | None) -> frozenset[str]:
+    granted = {p for p in (grants or []) if p in ALL_PERMISSIONS}
+    revoked = {p for p in (revokes or []) if p in ALL_PERMISSIONS}
+    return frozenset((base | granted) - revoked)
+
+
 def effective_permissions(role: Role, grants: list[str] | None = None, revokes: list[str] | None = None) -> frozenset[str]:
     """Role defaults, plus what a director granted, minus what they revoked.
     Unknown names are ignored, never trusted."""
 
-    granted = {p for p in (grants or []) if p in ALL_PERMISSIONS}
-    revoked = {p for p in (revokes or []) if p in ALL_PERMISSIONS}
-    return frozenset((role_defaults(role) | granted) - revoked)
+    return _apply(role_defaults(role), grants, revokes)
+
+
+def custom_role_permissions(custom_role) -> frozenset[str]:
+    """A company-defined role (V3 CustomRole): its base role's defaults with
+    the director's changes for that role."""
+
+    return _apply(role_defaults(custom_role.base_role), custom_role.access_grants, custom_role.access_revokes)
+
+
+def profile_permissions(profile) -> frozenset[str]:
+    """What a UserProfile may do, in three layers: base role defaults, then
+    its custom role's changes (V3), then the changes made for this person."""
+
+    base = custom_role_permissions(profile.custom_role) if profile.custom_role is not None else role_defaults(profile.role)
+    return _apply(base, profile.access_grants, profile.access_revokes)
 
 
 # Kept for callers that only know a role (tests, V2 code paths).

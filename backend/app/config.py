@@ -20,6 +20,20 @@ class Settings(BaseSettings):
     # V2.1 web sourcing: a Brave Search API key enables real web search for
     # supplier sourcing. Unset -> sourcing uses internal data only, and says so.
     brave_search_api_key: str | None = None
+    # V3 authentication (app.auth). "required": every API call needs a
+    # signed-in user's token and only sees that user's company. "legacy": the
+    # V2 behavior (no sign-in, X-User-Id profile switcher, one company) --
+    # kept for the bundled demo and the test suite, never for real customers.
+    auth_mode: str = "required"
+    # Signs the access tokens. Required in "required" mode; generate one with
+    # `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+    auth_secret_key: str | None = None
+    access_token_ttl_hours: int = 12
+    invite_ttl_days: int = 7
+    # Whether anyone can create a new company from the sign-up page.
+    signup_enabled: bool = True
+    # Where invitation links point (the frontend).
+    frontend_url: str = "http://localhost:3000"
 
     model_config = SettingsConfigDict(env_file=str(ENV_FILE), env_file_encoding="utf-8", extra="ignore")
 
