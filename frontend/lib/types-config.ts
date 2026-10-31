@@ -1,7 +1,9 @@
 // V3 configuration phase (backend app/configuration).
 
 export type CatalogSector = { key: string; label: string; group: string; group_label: string };
-export type CatalogGroup = { key: string; label: string; business_models: string[]; questions: string[] };
+export type QcmQuestion = { key: "goals" | "problems" | "externals"; title: string; hint: string; choices: string[] };
+export type CatalogGroup = { key: string; label: string; business_models: string[]; questions: string[]; qcm: QcmQuestion[] };
+export type ToolPage = { key: string; title: string; why: string; categories: string[] };
 export type CatalogFunction = { key: string; label: string; description: string };
 export type CatalogCategory = { key: string; label: string; data: string[]; ai_use: string };
 export type CatalogTool = { key: string; label: string; category: string };
@@ -12,6 +14,7 @@ export type ConfigCatalog = {
   functions: CatalogFunction[];
   categories: CatalogCategory[];
   tools: CatalogTool[];
+  tool_pages: ToolPage[];
 };
 
 export type ConfigurationData = {
@@ -21,6 +24,8 @@ export type ConfigurationData = {
   custom_tools?: string[];
   problems?: string;
   external_factors?: string;
+  answers?: Record<string, string[]>;
+  answer_notes?: Record<string, string>;
   completed_at?: string;
 };
 
@@ -50,6 +55,8 @@ export type ConfigurationUpdate = {
   country?: string;
   business_model?: string;
   objectives?: string;
+  answers?: Record<string, string[]>;
+  answer_notes?: Record<string, string>;
 };
 
 export type ImportKind = "customers" | "suppliers" | "products" | "fec";
@@ -66,6 +73,7 @@ export type IntegrationItem = {
   direct_methods: string[];
   status: "imported" | "to_connect";
   last_import_at: string | null;
+  connection?: "requested" | null;
 };
 
 export type ImportEntry = { kind: ImportKind; file: string; created: number; updated: number; skipped: number; tool: string | null; at: string };

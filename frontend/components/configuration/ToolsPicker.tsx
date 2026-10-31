@@ -13,6 +13,8 @@ export default function ToolsPicker({
   customTools,
   onChange,
   onCustomChange,
+  categoryKeys,
+  showCustom = true,
 }: {
   tools: CatalogTool[];
   categories: CatalogCategory[];
@@ -20,6 +22,9 @@ export default function ToolsPicker({
   customTools: string[];
   onChange: (keys: string[]) => void;
   onCustomChange: (names: string[]) => void;
+  // Only these families are shown (one page of the setup).
+  categoryKeys?: string[];
+  showCustom?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
@@ -27,9 +32,10 @@ export default function ToolsPicker({
   const sections = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return categories
+      .filter((c) => !categoryKeys || categoryKeys.includes(c.key))
       .map((c) => ({ category: c, items: tools.filter((t) => t.category === c.key && (!needle || t.label.toLowerCase().includes(needle) || c.label.toLowerCase().includes(needle))) }))
       .filter((s) => s.items.length > 0);
-  }, [tools, categories, query]);
+  }, [tools, categories, query, categoryKeys]);
 
   function toggle(key: string) {
     onChange(selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key]);
@@ -52,13 +58,14 @@ export default function ToolsPicker({
         className="w-full rounded-xl border-[1.5px] border-border-strong px-4 py-3 text-[14.5px] outline-none focus:border-accent"
       />
       <p className="mt-2 text-[12px] text-text-faint">
-        {selected.length + customTools.length} outil{selected.length + customTools.length > 1 ? "s" : ""} sélectionné{selected.length + customTools.length > 1 ? "s" : ""}
+        {selected.length + customTools.length} outil{selected.length + customTools.length > 1 ? "s" : ""} sélectionné{selected.length + customTools.length > 1 ? "s" : ""} au total
       </p>
-      <div className="mt-3 max-h-[380px] space-y-5 overflow-y-auto rounded-xl border border-border p-3">
+      <div className="mt-3 space-y-5 rounded-xl border border-border p-3">
         {sections.length === 0 && <p className="px-1 py-2 text-[13px] text-text-faint">Aucun outil ne correspond : ajoutez-le ci-dessous avec son nom.</p>}
         {sections.map(({ category, items }) => (
           <div key={category.key}>
-            <p className="mb-1.5 px-1 text-[11px] font-bold uppercase tracking-wide text-text-faint">{category.label}</p>
+            <p className="px-1 text-[11px] font-bold uppercase tracking-wide text-text-faint">{category.label}</p>
+            <p className="mb-2 mt-0.5 px-1 text-[12px] text-text-soft">{category.ai_use}</p>
             <div className="flex flex-wrap gap-2">
               {items.map((t) => (
                 <button
@@ -77,7 +84,7 @@ export default function ToolsPicker({
           </div>
         ))}
       </div>
-      <div className="mt-4">
+      {showCustom && <div className="mt-4">
         <label className="mb-1.5 block text-[13px] font-semibold text-text">Un outil qui n&rsquo;est pas dans la liste&nbsp;?</label>
         <div className="flex gap-2">
           <input
@@ -111,7 +118,7 @@ export default function ToolsPicker({
             ))}
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

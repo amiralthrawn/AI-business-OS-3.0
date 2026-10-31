@@ -285,3 +285,30 @@ def import_fec(session: Session, company_id: uuid.UUID, content: bytes) -> tuple
         "to": max(dates) if dates else None,
     }
     return result, summary
+
+
+def detect_kind(filename: str, content: bytes) -> str:
+    """Which kind of data a file holds, from its content first, its name second."""
+
+    name = _norm(filename)
+    if any(token in name for token in ("fec", "ecriture", "grandlivre", "journal")):
+        try:
+            _fec_rows(content)
+            return "fec"
+        except ImportError_:
+            pass
+    try:
+        _fec_rows(content)
+        return "fec"
+    except ImportError_:
+        pass
+    rows = read_table(filename, content)
+    columns = [_norm(c) for c in rows[0].keys()]
+    if any(c in _SYNONYMS["products"]["sku"] + _SYNONYMS["products"]["unit_cost"] + _SYNONYMS["products"]["sale_price"] for c in columns):
+        return "products"
+    for kind, tokens in (("suppliers", ("fournisseur", "supplier", "vendor")), ("products", ("article", "produit", "product", "stock", "catalogue")), ("customers", ("client", "customer", "prospect"))):
+        if any(t in name for t in tokens):
+            return kind
+    if any(c in ("fournisseur", "supplier", "vendor", "suppliername", "conditionsdepaiement", "paymentterms") for c in columns):
+        return "suppliers"
+    return "customers"

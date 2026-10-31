@@ -19,20 +19,6 @@ const COUNTRY_OPTIONS = [
   { code: "BE", label: "Belgique" },
   { code: "CH", label: "Suisse" },
 ];
-const DOMAIN_OPTIONS = [
-  { value: "finance", label: "Finance et trésorerie" },
-  { value: "accounting", label: "Comptabilité et fiscalité" },
-  { value: "sales", label: "Ventes et clients" },
-  { value: "procurement", label: "Achats et fournisseurs" },
-  { value: "supply_chain", label: "Stock et supply chain" },
-  { value: "operations", label: "Production et opérations" },
-  { value: "hr", label: "Ressources humaines et paie" },
-  { value: "marketing", label: "Marketing et acquisition" },
-  { value: "customer_service", label: "Service client et support" },
-  { value: "legal", label: "Juridique et conformité" },
-  { value: "it", label: "Informatique et données" },
-  { value: "strategy", label: "Direction et stratégie" },
-];
 const FOCUS_OPTIONS = [
   { value: "priorities", label: "Priorités IA" },
   { value: "risks", label: "Risques" },
@@ -75,10 +61,6 @@ export default function SettingsForm({
   const [country, setCountry] = useState(context.country ?? "FR");
   const [profileStatus, setProfileStatus] = useState<SaveStatus>("idle");
 
-  // Section 2 -- Domaines
-  const [domains, setDomains] = useState(context.monitored_domains);
-  const [domainsStatus, setDomainsStatus] = useState<SaveStatus>("idle");
-
   // Section 3 -- Priorités du Centre de contrôle
   const [focus, setFocus] = useState(context.home_focus);
   const [focusStatus, setFocusStatus] = useState<SaveStatus>("idle");
@@ -106,16 +88,6 @@ export default function SettingsForm({
       flash(setProfileStatus, true);
     } catch {
       flash(setProfileStatus, false);
-    }
-  }
-
-  async function saveDomains() {
-    setDomainsStatus("saving");
-    try {
-      await updateBusinessContext({ monitored_domains: domains });
-      flash(setDomainsStatus, true);
-    } catch {
-      flash(setDomainsStatus, false);
     }
   }
 
@@ -196,24 +168,6 @@ export default function SettingsForm({
         </div>
         <div className="mt-6 flex justify-end">
           <SaveButton status={profileStatus} onClick={saveProfile} />
-        </div>
-      </Card>
-
-      <Card className="p-7">
-        <span className="text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Domaines surveillés par l&rsquo;IA</span>
-        <p className="mt-2 text-[12.5px] text-text-faint">Ces domaines déterminent où l&rsquo;Intelligence recherche activement des risques et opportunités.</p>
-        <div className="mt-4 flex flex-wrap gap-2.5">
-          {DOMAIN_OPTIONS.map((opt) => (
-            <Chip
-              key={opt.value}
-              label={opt.label}
-              selected={domains.includes(opt.value)}
-              onClick={() => setDomains((d) => (d.includes(opt.value) ? d.filter((x) => x !== opt.value) : [...d, opt.value]))}
-            />
-          ))}
-        </div>
-        <div className="mt-6 flex justify-end">
-          <SaveButton status={domainsStatus} onClick={saveDomains} />
         </div>
       </Card>
 

@@ -308,6 +308,25 @@ export async function saveConfiguration(payload: ConfigurationUpdate): Promise<C
   return res.json();
 }
 
+export async function importAuto(file: File): Promise<ImportResultRead> {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await apiFetch(`${API_URL}/configuration/imports/auto`, { method: "POST", body, cache: "no-store" });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(typeof detail?.detail === "string" ? detail.detail : `Import impossible (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function requestToolConnection(toolKey: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/configuration/tools/${encodeURIComponent(toolKey)}/request-connection`, { method: "POST", cache: "no-store" });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(typeof detail?.detail === "string" ? detail.detail : `Demande impossible (${res.status})`);
+  }
+}
+
 export async function importDataFile(kind: ImportKind, file: File, tool?: string): Promise<ImportResultRead> {
   const body = new FormData();
   body.append("file", file);

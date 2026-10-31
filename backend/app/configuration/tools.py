@@ -276,3 +276,21 @@ def tool_info(tool_key: str) -> tuple[str, Category] | None:
 
 def is_known_tool(tool_key: str) -> bool:
     return tool_key in _TOOL_BY_KEY
+
+
+# The tools are asked over four pages, each with the reason it is asked, so
+# the person sees why the AI needs it rather than a long questionnaire.
+TOOL_PAGES: list[tuple[str, str, str, tuple[str, ...]]] = [
+    ("business", "Votre gestion au quotidien",
+     "Vos clients, vos ventes, vos factures et vos achats vivent déjà quelque part. En sachant où, l'IA les retrouve toute seule : vous n'avez rien à ressaisir.",
+     ("erp", "crm", "accounting", "invoicing", "procurement", "ecommerce")),
+    ("money", "Votre argent",
+     "Pour vous montrer votre vraie trésorerie et repérer les paiements en retard, l'IA doit savoir par où passe votre argent. Rien n'est connecté sans votre accord.",
+     ("bank", "payment", "expenses")),
+    ("operations", "Votre activité et vos équipes",
+     "Stock, production, équipes, messages : c'est ce qui explique vos résultats. Indiquer vos outils permet à l'IA de relier ce qui se passe sur le terrain à votre marge.",
+     ("stock", "production", "hr", "messaging", "projects", "support", "marketing", "legal")),
+    ("files", "Vos tableaux et vos fichiers",
+     "Souvent, le vrai système d'une entreprise tient dans quelques tableurs et rapports. L'IA s'en sert pour reprendre vos propres chiffres et vos propres indicateurs.",
+     ("spreadsheet", "bi", "database")),
+]

@@ -24,6 +24,8 @@ class ConfigurationUpdate(BaseModel):
     country: str | None = None
     business_model: str | None = Field(default=None, max_length=120)
     objectives: str | None = Field(default=None, max_length=4000)
+    answers: dict[str, list[str]] | None = None
+    answer_notes: dict[str, str] | None = None
 
 
 def _company(db: Session) -> Company:
@@ -37,7 +39,17 @@ def _company(db: Session) -> Company:
 def get_catalog() -> dict:
     return {
         "sectors": [{"key": k, "label": label, "group": g, "group_label": sectors.GROUPS[g].label} for k, label, g in sectors.SECTORS],
-        "groups": [{"key": g.key, "label": g.label, "business_models": list(g.business_models), "questions": list(g.questions)} for g in sectors.GROUPS.values()],
+        "groups": [
+            {
+                "key": g.key,
+                "label": g.label,
+                "business_models": list(g.business_models),
+                "questions": list(g.questions),
+                "qcm": [{"key": key, "title": sectors.QCM_TITLES[key][0], "hint": sectors.QCM_TITLES[key][1], "choices": list(choices)} for key, choices in sectors.qcm_for(g.key).items()],
+            }
+            for g in sectors.GROUPS.values()
+        ],
+        "tool_pages": [{"key": k, "title": t, "why": w, "categories": list(c)} for k, t, w, c in tools.TOOL_PAGES],
         "functions": [{"key": k, "label": label, "description": d} for k, label, d in sectors.FUNCTIONS],
         "categories": [{"key": c.key, "label": c.label, "data": list(c.data), "ai_use": c.ai_use} for c in tools.CATEGORIES.values()],
         "tools": [{"key": k, "label": label, "category": c} for k, label, c in tools.TOOLS],
@@ -68,6 +80,8 @@ def put_configuration(payload: ConfigurationUpdate, db: Session = Depends(get_db
         country=payload.country,
         business_model=payload.business_model,
         objectives=payload.objectives,
+        answers=payload.answers,
+        answer_notes=payload.answer_notes,
     )
     config = dict(context.configuration or {})
     return {"configuration": config, "ai_profile": service.ai_profile(config), "configured": bool(config.get("completed_at"))}
@@ -78,6 +92,34 @@ def get_integration_plan(db: Session = Depends(get_db)) -> dict:
     company = _company(db)
     config = service.get_configuration(db, company.id)
     return {"tools": service.integration_plan(config), "custom_tools": config.get("custom_tools") or [], "imports": config.get("imports") or [], "fec_summary": config.get("fec_summary")}
+
+
+@router.post("/imports/auto")
+async def import_auto(
+    file: UploadFile = File(...),
+    tool: str | None = None,
+    db: Session = Depends(get_db),
+    _user: CurrentUser = Depends(require(access.WRITE_SETTINGS)),
+) -> dict:
+    """One drop zone for every file: the kind (FEC, customers, suppliers,
+    products) is recognised from the file itself."""
+
+    company = _company(db)
+    content = await file.read(imports.MAX_BYTES + 1)
+    try:
+        kind = imports.detect_kind(file.filename or "", content)
+    except imports.ImportError_ as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await _run_import(db, company, kind, file.filename or "", content, tool)
+
+
+@router.post("/tools/{tool_key}/request-connection")
+def request_tool_connection(tool_key: str, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    company = _company(db)
+    try:
+        return service.request_connection(db, company.id, tool_key)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=tx("Cet outil n'est pas dans votre liste.", "This tool is not in your list.")) from exc
 
 
 @router.post("/imports/{kind}")
@@ -92,16 +134,20 @@ async def import_file(
         raise HTTPException(status_code=404, detail=tx("Type d'import inconnu", "Unknown import type"))
     company = _company(db)
     content = await file.read(imports.MAX_BYTES + 1)
+    return await _run_import(db, company, kind, file.filename or "", content, tool)
+
+
+async def _run_import(db: Session, company: Company, kind: str, filename: str, content: bytes, tool: str | None) -> dict:
     try:
         if kind == "fec":
             result, summary = imports.import_fec(db, company.id, content)
         else:
             summary = None
-            result = imports.import_entities(db, company.id, kind, imports.read_table(file.filename or "", content))
+            result = imports.import_entities(db, company.id, kind, imports.read_table(filename, content))
     except imports.ImportError_ as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    entry = {"kind": kind, "file": (file.filename or "")[:200], "created": result.created, "updated": result.updated, "skipped": result.skipped, "tool": tool}
+    entry = {"kind": kind, "file": filename[:200], "created": result.created, "updated": result.updated, "skipped": result.skipped, "tool": tool}
     if summary:
         entry["summary"] = summary
     db.commit()

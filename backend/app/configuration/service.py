@@ -33,6 +33,8 @@ def save_configuration(
     country: str | None,
     business_model: str | None,
     objectives: str | None,
+    answers: dict[str, list[str]] | None = None,
+    answer_notes: dict[str, str] | None = None,
 ) -> BusinessContext:
     context = BusinessContextService(session).get_or_create(company.id)
     config = dict(context.configuration or {})
@@ -50,7 +52,33 @@ def save_configuration(
     if tool_keys is not None:
         previous = dict(config.get("tools") or {})
         config["tools"] = {key: previous.get(key, {}) for key in dict.fromkeys(tool_keys) if tools.is_known_tool(key)}
+    first_time = "completed_at" not in config
     config.setdefault("completed_at", datetime.now(timezone.utc).isoformat())
+
+    # Multiple-choice answers (sectors.QCM): kept as ticked, with an optional
+    # free precision per question. They also feed the plain-text fields the
+    # rest of the product already reads.
+    if answers is not None:
+        config["answers"] = {
+            key: [str(a).strip()[:200] for a in values if str(a).strip()][:12]
+            for key, values in answers.items()
+            if key in sectors.QCM_TITLES and isinstance(values, list)
+        }
+    if answer_notes is not None:
+        config["answer_notes"] = {key: str(note).strip()[:2000] for key, note in answer_notes.items() if key in sectors.QCM_TITLES and str(note).strip()}
+    if answers is not None or answer_notes is not None:
+        picked, notes = config.get("answers", {}), config.get("answer_notes", {})
+
+        def _compose(key: str) -> str:
+            text = "; ".join(picked.get(key, []))
+            return f"{text}. {notes[key]}" if text and key in notes else text or notes.get(key, "")
+
+        if _compose("goals"):
+            objectives = _compose("goals")
+        if _compose("problems") and problems is None:
+            config["problems"] = _compose("problems")
+        if _compose("externals") and external_factors is None:
+            config["external_factors"] = _compose("externals")
 
     # The sector shown everywhere in the product is the company's own words
     # when it chose "Autre", else the catalogue label.
@@ -61,6 +89,9 @@ def save_configuration(
         company.industry = label[:255]
         session.add(company)
 
+    if functions is None and first_time:
+        # The AI watches everything: that is the product. Nothing to choose.
+        functions = list(FUNCTION_KEYS)
     if functions is not None:
         context.monitored_domains = [f for f in dict.fromkeys(functions) if f in FUNCTION_KEYS]
     if company_size is not None:
@@ -119,6 +150,8 @@ def ai_profile(config: dict) -> dict:
         "next_questions": list(group.questions),
         "problems": config.get("problems"),
         "own_external_factors": config.get("external_factors"),
+        "answers": config.get("answers") or {},
+        "answer_notes": config.get("answer_notes") or {},
         "tools": declared,
         "custom_tools": config.get("custom_tools") or [],
     }
@@ -143,5 +176,26 @@ def integration_plan(config: dict) -> list[dict]:
             "direct_methods": list(category.direct),
             "status": "imported" if state.get("data") == "imported" else "to_connect",
             "last_import_at": state.get("last_import_at"),
+            "connection": state.get("connection"),
         })
     return plan
+
+
+def request_connection(session: Session, company_id: uuid.UUID, tool_key: str) -> dict:
+    """The company asks to be helped to connect a tool directly (secure,
+    read-only authorisation). Recorded on the tool; nothing is connected."""
+
+    context = BusinessContextService(session).get_or_create(company_id)
+    config = dict(context.configuration or {})
+    configured = dict(config.get("tools") or {})
+    if tool_key not in configured:
+        raise KeyError(tool_key)
+    state = dict(configured[tool_key])
+    state["connection"] = "requested"
+    state["connection_requested_at"] = datetime.now(timezone.utc).isoformat()
+    configured[tool_key] = state
+    config["tools"] = configured
+    context.configuration = config
+    session.add(context)
+    session.commit()
+    return state

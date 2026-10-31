@@ -236,3 +236,86 @@ def sector_label(sector_key: str | None) -> str | None:
 
 def is_known_sector(sector_key: str) -> bool:
     return sector_key in _SECTOR_BY_KEY
+
+
+# Multiple-choice answers the AI starts from (V3 configuration). The company
+# ticks what applies; free text is only an optional precision. Choices are
+# specific to the kind of business: every company already knows we help it
+# earn more and save time, so the questions go to what is particular to it.
+QCM_TITLES = {
+    "goals": ("Ce que vous voulez améliorer", "Cochez tout ce qui compte pour vous."),
+    "problems": ("Ce qui vous freine aujourd'hui", "Cochez ce que vous reconnaissez, même si vous n'êtes pas sûr de l'ampleur."),
+    "externals": ("Ce qui, hors de l'entreprise, influence votre résultat", "Cochez ce qui pèse sur votre activité."),
+}
+
+QCM: dict[str, dict[str, tuple[str, ...]]] = {
+    "trading": {
+        "goals": ("Augmenter ma marge sur chaque vente", "Savoir quelles références et quels clients me rapportent vraiment", "Mieux négocier avec mes fournisseurs", "Réduire le stock qui dort", "Encaisser mes clients plus vite", "Trouver de nouveaux clients ou débouchés", "Anticiper les hausses de prix avant d'acheter"),
+        "problems": ("Mes marges baissent sans que je comprenne pourquoi", "Je dépends de quelques fournisseurs ou clients", "Du stock dort ou je suis en rupture", "Des clients paient en retard ou pas du tout", "Je n'ai pas de vue claire de ma trésorerie", "Je ressaisis des données entre mes outils", "Mes prix d'achat changent plus vite que mes prix de vente"),
+        "externals": ("Les prix des produits que j'achète", "Les taux de change", "Les droits de douane et la réglementation import-export", "Les pénuries et délais des fabricants", "Les saisons et cycles d'achat de mes clients", "Les salons et événements du secteur", "La concurrence et les prix du marché"),
+    },
+    "retail": {
+        "goals": ("Faire dépenser plus à chaque client", "Savoir quels produits font ma marge", "Réduire invendus et ruptures", "Fidéliser mes clients", "Payer moins cher pour attirer un client", "Gagner du temps sur la gestion quotidienne"),
+        "problems": ("Je vends mais je ne sais pas ce que je gagne vraiment", "Trop de retours ou d'invendus", "Je dépends d'une plateforme ou de la publicité", "Mes stocks ne sont pas à jour", "Mes ventes sont très irrégulières", "Je gère plusieurs canaux sans vue d'ensemble"),
+        "externals": ("Les soldes et les fêtes", "Le coût de la publicité en ligne", "Les concurrents en ligne", "Le pouvoir d'achat et les tendances", "La météo", "Les délais de livraison de mes fournisseurs"),
+    },
+    "manufacturing": {
+        "goals": ("Réduire mon coût de revient", "Livrer plus vite et à l'heure", "Réduire rebuts et non-qualité", "Mieux utiliser mes machines", "Sécuriser mes approvisionnements", "Gagner de nouveaux clients ou donneurs d'ordre"),
+        "problems": ("Pannes ou arrêts de production", "Matières premières qui montent", "Retards de mes fournisseurs", "Qualité irrégulière ou retours clients", "Je ne connais pas mon vrai coût par produit", "Je dépends d'un gros client"),
+        "externals": ("Le prix des matières premières et de l'énergie", "Les normes et la réglementation", "Les délais de mes fournisseurs", "Les cycles de la demande de mes clients", "Les taux de change", "La pénurie de main-d'œuvre qualifiée"),
+    },
+    "construction": {
+        "goals": ("Suivre la rentabilité de chaque chantier ou projet", "Encaisser plus vite", "Remplir mon carnet de commandes", "Réduire les dérives de coûts", "Mieux choisir mes sous-traitants", "Gagner du temps sur l'administratif"),
+        "problems": ("Des chantiers dépassent leur budget", "Retards et pénalités", "Paiements tardifs ou retenues de garantie", "Difficile de planifier la charge", "Hausse du prix des matériaux", "Dossiers et documents dispersés"),
+        "externals": ("Le prix des matériaux", "Les taux d'intérêt et le crédit", "La réglementation et les normes", "La météo et la saison", "Les appels d'offres et marchés publics", "La disponibilité des artisans et sous-traitants"),
+    },
+    "services": {
+        "goals": ("Mieux occuper mes équipes", "Augmenter mon taux journalier", "Savoir quelles missions sont rentables", "Facturer et encaisser plus vite", "Développer le revenu récurrent", "Moins dépendre de quelques clients"),
+        "problems": ("Le temps passé dépasse ce que je facture", "Quelques clients font l'essentiel de mon chiffre d'affaires", "Mon équipe est sous ou sur-occupée", "Mes factures sont payées en retard", "Je prévois mal les mois à venir", "Recruter ou garder les talents est difficile"),
+        "externals": ("La conjoncture de mes clients", "La concurrence", "La pénurie de talents", "Les évolutions réglementaires", "Les budgets de mes clients (début et fin d'année)", "L'IA et les nouveaux outils qui changent le métier"),
+    },
+    "tech": {
+        "goals": ("Faire croître le revenu récurrent", "Réduire le départ de clients (churn)", "Baisser le coût pour gagner un client", "Maîtriser les coûts cloud", "Mieux occuper mes équipes", "Préparer un financement ou une levée"),
+        "problems": ("Des clients partent trop vite", "Je dépends d'un gros client", "Mes coûts cloud explosent", "La dette technique ralentit le produit", "Je manque de visibilité sur ma trésorerie", "Recruter est difficile"),
+        "externals": ("La concurrence", "Le coût de l'infrastructure", "Le RGPD et la réglementation des données", "Le marché du financement", "Les cycles budgétaires de mes clients", "L'évolution rapide de la technologie (IA)"),
+    },
+    "hospitality": {
+        "goals": ("Remplir davantage aux périodes creuses", "Augmenter mon prix moyen", "Réduire les annulations", "Moins dépendre des plateformes de réservation", "Mieux anticiper la saison", "Fidéliser mes clients"),
+        "problems": ("Forte saisonnalité", "Annulations de dernière minute", "Commissions des plateformes", "Coûts fixes élevés", "Manque de personnel", "Prix d'achat qui montent chez mes fournisseurs"),
+        "externals": ("La saison et la météo", "Les événements et congrès de ma destination", "Les taux de change", "La situation géopolitique ou sanitaire", "Le prix des transports et du carburant", "Les avis en ligne"),
+    },
+    "health": {
+        "goals": ("Mieux remplir mon agenda ou mes capacités", "Réduire les délais de paiement et de remboursement", "Suivre ma rentabilité par activité", "Gagner du temps sur l'administratif", "Sécuriser mes approvisionnements", "Mieux gérer mes équipes"),
+        "problems": ("Retards de remboursement", "Charge administrative lourde", "Ruptures d'approvisionnement", "Absentéisme ou manque de personnel", "Des règles qui changent souvent", "Peu de visibilité sur ma rentabilité"),
+        "externals": ("Les tarifs et la réglementation", "Les épidémies et la saisonnalité", "Les pénuries de produits", "Les évolutions des remboursements", "La démographie locale", "La concurrence locale"),
+    },
+    "logistics": {
+        "goals": ("Mieux remplir mes véhicules ou entrepôts", "Réduire mon coût par trajet", "Livrer à l'heure", "Encaisser plus vite", "Gagner de nouveaux chargeurs", "Moins dépendre d'un gros client"),
+        "problems": ("Le carburant qui monte", "Des véhicules immobilisés", "Retards et litiges", "Trop de retours à vide", "Des impayés", "Des sous-traitants peu fiables"),
+        "externals": ("Le prix du carburant et des péages", "La réglementation du transport", "La météo et le trafic", "Les taux de fret", "Les grèves et événements", "La saisonnalité de mes clients"),
+    },
+    "agri": {
+        "goals": ("Mieux vendre ma production", "Réduire mes coûts de production", "Améliorer mes rendements", "Sécuriser ma trésorerie entre deux récoltes", "Profiter des aides disponibles", "Diversifier mes débouchés"),
+        "problems": ("Aléas climatiques", "Prix de vente trop bas", "Coût des intrants qui monte", "Maladies et nuisibles", "Trésorerie irrégulière", "Démarches administratives lourdes"),
+        "externals": ("La météo et le climat", "Les cours mondiaux", "Les subventions et la réglementation", "Le prix des engrais et de l'énergie", "La demande des acheteurs", "La concurrence étrangère"),
+    },
+    "finance": {
+        "goals": ("Accroître mes encours ou ma collecte", "Réduire le risque", "Rester conforme à la réglementation", "Améliorer mon rendement", "Fidéliser mes clients", "Traiter les dossiers plus vite"),
+        "problems": ("Des dossiers lents à traiter", "Risque de crédit ou d'impayés", "Exigences réglementaires lourdes", "Fraude", "Des données dispersées", "Des marges qui se réduisent"),
+        "externals": ("Les taux d'intérêt", "La réglementation", "Les marchés financiers", "La concurrence des fintech", "La conjoncture économique", "Les évolutions fiscales"),
+    },
+    "public": {
+        "goals": ("Sécuriser mes financements", "Toucher plus de bénéficiaires ou d'adhérents", "Mieux suivre mon budget", "Gagner du temps sur l'administratif", "Mieux prouver mon impact", "Diversifier mes ressources"),
+        "problems": ("Je dépends de peu de financeurs", "Trésorerie tendue", "Suivi administratif lourd", "Difficulté à recruter bénévoles ou équipe", "Peu de visibilité sur les résultats", "Appels à projets difficiles à suivre"),
+        "externals": ("Les subventions et appels d'offres", "Le calendrier scolaire ou électoral", "L'audience et les réseaux", "La réglementation", "La conjoncture", "Les partenariats"),
+    },
+    "generic": {
+        "goals": ("Augmenter mon chiffre d'affaires", "Améliorer ma marge", "Mieux maîtriser ma trésorerie", "Encaisser plus vite", "Réduire mes coûts", "Gagner du temps sur l'administratif", "Mieux connaître mes clients"),
+        "problems": ("Je ne sais pas ce qui me rapporte vraiment", "Des clients paient en retard", "Ma trésorerie est difficile à prévoir", "Je dépends d'un client ou d'un fournisseur", "Trop de temps perdu en tâches manuelles", "Mes données sont éparpillées dans plusieurs outils"),
+        "externals": ("La conjoncture", "La concurrence", "La réglementation", "La saison", "Les prix de mes fournisseurs", "Les taux de change"),
+    },
+}
+
+
+def qcm_for(group_key: str) -> dict[str, tuple[str, ...]]:
+    return QCM.get(group_key, QCM["generic"])

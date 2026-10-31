@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import DataImport from "@/components/configuration/DataImport";
+import QcmQuestions from "@/components/configuration/QcmQuestions";
 import SectorPicker from "@/components/configuration/SectorPicker";
 import ToolsPicker from "@/components/configuration/ToolsPicker";
 import Button from "@/components/ui/Button";
@@ -17,6 +18,8 @@ export default function ConfigurationPanel({ canEdit }: { canEdit: boolean }) {
   const [sectorCustom, setSectorCustom] = useState("");
   const [toolKeys, setToolKeys] = useState<string[]>([]);
   const [customTools, setCustomTools] = useState<string[]>([]);
+  const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
@@ -29,6 +32,8 @@ export default function ConfigurationPanel({ canEdit }: { canEdit: boolean }) {
         setSectorCustom(c.configuration.sector_custom ?? "");
         setToolKeys(Object.keys(c.configuration.tools ?? {}));
         setCustomTools(c.configuration.custom_tools ?? []);
+        setAnswers(c.configuration.answers ?? {});
+        setNotes(c.configuration.answer_notes ?? {});
       })
       .catch(() => undefined);
   }, []);
@@ -37,7 +42,7 @@ export default function ConfigurationPanel({ canEdit }: { canEdit: boolean }) {
     setStatus("saving");
     setMessage(null);
     try {
-      await saveConfiguration({ sector_key: sectorKey || undefined, sector_custom: sectorCustom, tools: toolKeys, custom_tools: customTools });
+      await saveConfiguration({ sector_key: sectorKey || undefined, sector_custom: sectorCustom, tools: toolKeys, custom_tools: customTools, answers, answer_notes: notes });
       setStatus("saved");
       setRefresh((n) => n + 1);
       setTimeout(() => setStatus("idle"), 2200);
@@ -46,6 +51,9 @@ export default function ConfigurationPanel({ canEdit }: { canEdit: boolean }) {
       setMessage(err instanceof Error ? err.message : "Enregistrement impossible.");
     }
   }
+
+  const groupKey = catalog?.sectors.find((x) => x.key === sectorKey)?.group ?? "generic";
+  const qcm = catalog?.groups.find((g) => g.key === groupKey)?.qcm ?? [];
 
   return (
     <>
@@ -60,6 +68,14 @@ export default function ConfigurationPanel({ canEdit }: { canEdit: boolean }) {
           )}
         </div>
       </Card>
+
+      {qcm.length > 0 && (
+        <Card className="p-7">
+          <span className="text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Vos objectifs et vos enjeux</span>
+          <p className="mt-2 mb-6 text-[12.5px] text-text-faint">Ces réponses orientent les recommandations de l&rsquo;IA. Enregistrez avec le bloc « Outils » juste en dessous.</p>
+          <QcmQuestions questions={qcm} answers={answers} notes={notes} onAnswers={setAnswers} onNotes={setNotes} />
+        </Card>
+      )}
 
       <Card className="p-7">
         <span className="text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Outils utilisés par l&rsquo;entreprise</span>

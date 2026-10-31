@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
 import Chip from "@/components/ui/Chip";
 import DataImport from "@/components/configuration/DataImport";
+import QcmQuestions from "@/components/configuration/QcmQuestions";
 import SectorPicker from "@/components/configuration/SectorPicker";
 import ToolsPicker from "@/components/configuration/ToolsPicker";
 import { AUTH_REQUIRED, createUser, getConfigCatalog, getConfiguration, saveConfiguration, setSelectedProfile, updateCompany } from "@/lib/api";
@@ -45,7 +46,9 @@ const ROLE_OPTIONS: { role: Role; hint: string }[] = [
   { role: "employee", hint: "Consultation et tâches" },
 ];
 
-const STEPS = ["Entreprise", "Activité", "Fonctions", "Outils", "Vos données", ...(AUTH_REQUIRED ? [] : ["Votre rôle"]), "Récapitulatif"];
+// The tools are asked over four pages, each saying why (catalog.tool_pages).
+const TOOL_STEPS = ["Outils:business", "Outils:money", "Outils:operations", "Outils:files"];
+const STEPS = ["Entreprise", "Activité", ...TOOL_STEPS, "Vos données", ...(AUTH_REQUIRED ? [] : ["Votre rôle"]), "Récapitulatif"];
 
 export default function OnboardingWizard({
   initialCompany,
@@ -70,10 +73,8 @@ export default function OnboardingWizard({
   const [size, setSize] = useState(initialContext?.company_size ?? "11–50");
   const [country, setCountry] = useState(initialContext?.country ?? "FR");
   const [businessModel, setBusinessModel] = useState(initialContext?.business_model ?? "");
-  const [functions, setFunctions] = useState<string[]>(initialContext?.monitored_domains ?? []);
-  const [objectives, setObjectives] = useState(initialContext?.stated_objectives ?? "");
-  const [problems, setProblems] = useState("");
-  const [externalFactors, setExternalFactors] = useState("");
+  const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
   const [toolKeys, setToolKeys] = useState<string[]>([]);
   const [customTools, setCustomTools] = useState<string[]>([]);
 
@@ -84,8 +85,8 @@ export default function OnboardingWizard({
         const cfg = c.configuration;
         if (cfg.sector_key) setSectorKey(cfg.sector_key);
         if (cfg.sector_custom) setSectorCustom(cfg.sector_custom);
-        if (cfg.problems) setProblems(cfg.problems);
-        if (cfg.external_factors) setExternalFactors(cfg.external_factors);
+        if (cfg.answers) setAnswers(cfg.answers);
+        if (cfg.answer_notes) setNotes(cfg.answer_notes);
         if (cfg.tools) setToolKeys(Object.keys(cfg.tools));
         if (cfg.custom_tools) setCustomTools(cfg.custom_tools);
       })
@@ -96,23 +97,17 @@ export default function OnboardingWizard({
   const groupInfo = catalog?.groups.find((g) => g.key === group) ?? catalog?.groups.find((g) => g.key === "generic");
   const sectorLabel = sectorKey === "autre" ? sectorCustom.trim() : catalog?.sectors.find((s) => s.key === sectorKey)?.label ?? "";
 
-  function toggleFunction(value: string) {
-    setFunctions((prev) => (prev.includes(value) ? prev.filter((d) => d !== value) : [...prev, value]));
-  }
-
   function payload(): ConfigurationUpdate {
     return {
       sector_key: sectorKey || undefined,
       sector_custom: sectorCustom,
-      functions,
       tools: toolKeys,
       custom_tools: customTools,
-      problems,
-      external_factors: externalFactors,
       company_size: size,
       country,
       business_model: businessModel || undefined,
-      objectives,
+      answers,
+      answer_notes: notes,
     };
   }
 
@@ -128,7 +123,7 @@ export default function OnboardingWizard({
   async function next() {
     setError(null);
     // The tools are saved before the data step so every upload attaches to a declared tool.
-    if (STEPS[step] === "Outils") {
+    if (STEPS[step] === "Outils:files") {
       setSaving(true);
       try {
         await persist();
@@ -240,17 +235,17 @@ export default function OnboardingWizard({
         {STEPS[step] === "Activité" && (
           <>
             <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
-              Comment gagnez-vous
+              Parlons de
               <br />
-              de l&rsquo;argent&nbsp;?
+              votre activité
             </h1>
             <p className="mt-3.5 max-w-lg text-[15px] text-text-soft">
-              {sectorLabel ? `Pour ${sectorLabel.toLowerCase()}, voici les questions qui comptent. ` : ""}Répondez avec vos mots : l&rsquo;IA s&rsquo;en sert pour comprendre la suite.
+              {sectorLabel ? `Pour ${sectorLabel.toLowerCase()}, voici ce que nous rencontrons le plus souvent. ` : ""}Cochez simplement ce qui vous correspond : pas besoin de rédiger. Cela permet à l&rsquo;IA de comprendre vos enjeux dès le départ.
             </p>
 
             {groupInfo && groupInfo.business_models.length > 0 && (
               <div className="mt-8">
-                <label className="mb-2 block text-[13px] font-semibold text-text">Votre modèle</label>
+                <label className="mb-2 block text-[15px] font-semibold text-text">Votre modèle</label>
                 <div className="flex flex-wrap gap-2.5">
                   {groupInfo.business_models.map((m) => (
                     <Chip key={m} label={m} selected={businessModel === m} onClick={() => setBusinessModel(businessModel === m ? "" : m)} />
@@ -259,95 +254,49 @@ export default function OnboardingWizard({
               </div>
             )}
 
-            <div className="mt-7">
-              <label className="mb-2 block text-[13px] font-semibold text-text">Votre objectif principal</label>
-              <textarea
-                value={objectives}
-                onChange={(e) => setObjectives(e.target.value)}
-                placeholder="ex. Protéger la marge sur nos références clés et réduire la dépendance à un fournisseur."
-                rows={3}
-                className="w-full resize-none rounded-xl border-[1.5px] border-border-strong px-4 py-3 text-[13.5px] outline-none focus:border-accent"
-              />
-            </div>
+            {groupInfo && (
+              <div className="mt-9">
+                <QcmQuestions questions={groupInfo.qcm} answers={answers} notes={notes} onAnswers={setAnswers} onNotes={setNotes} />
+              </div>
+            )}
+          </>
+        )}
 
-            <div className="mt-7">
-              <label className="mb-2 block text-[13px] font-semibold text-text">Vos problèmes aujourd&rsquo;hui</label>
-              <textarea
-                value={problems}
-                onChange={(e) => setProblems(e.target.value)}
-                placeholder="ex. Je ne sais pas quels clients me rapportent vraiment. Les paiements arrivent en retard."
-                rows={3}
-                className="w-full resize-none rounded-xl border-[1.5px] border-border-strong px-4 py-3 text-[13.5px] outline-none focus:border-accent"
-              />
-            </div>
-
-            <div className="mt-7">
-              <label className="mb-2 block text-[13px] font-semibold text-text">Ce qui, hors de l&rsquo;entreprise, influence votre résultat</label>
-              <textarea
-                value={externalFactors}
-                onChange={(e) => setExternalFactors(e.target.value)}
-                placeholder={groupInfo?.questions.length ? "ex. " + (sectorKey ? "salons, cours, réglementation, saison, taux de change…" : "") : ""}
-                rows={3}
-                className="w-full resize-none rounded-xl border-[1.5px] border-border-strong px-4 py-3 text-[13.5px] outline-none focus:border-accent"
-              />
-              {groupInfo && (
-                <ul className="mt-2.5 space-y-1 text-[12px] text-text-faint">
-                  {groupInfo.questions.map((q) => (
-                    <li key={q}>• {q}</li>
-                  ))}
-                </ul>
+        {STEPS[step].startsWith("Outils:") && (() => {
+          const page = catalog?.tool_pages.find((p) => p.key === STEPS[step].split(":")[1]);
+          const pageNumber = TOOL_STEPS.indexOf(STEPS[step]) + 1;
+          return (
+            <>
+              <p className="mt-3 text-[12px] font-semibold text-text-faint">
+                Vos outils · {pageNumber} sur {TOOL_STEPS.length}
+              </p>
+              <h1 className="mt-2 font-display text-[30px] italic leading-tight md:text-[34px]">{page?.title ?? "Vos outils"}</h1>
+              {page && (
+                <div className="mt-4 rounded-2xl bg-surface-sunken p-4">
+                  <p className="text-[12px] font-bold uppercase tracking-wide text-accent-strong">Pourquoi nous vous le demandons</p>
+                  <p className="mt-1.5 text-[13.5px] text-text-soft">{page.why}</p>
+                </div>
               )}
-            </div>
-          </>
-        )}
-
-        {STEPS[step] === "Fonctions" && (
-          <>
-            <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
-              Que doit surveiller
-              <br />
-              l&rsquo;IA&nbsp;?
-            </h1>
-            <p className="mt-3.5 max-w-lg text-[15px] text-text-soft">Choisissez toutes les fonctions de l&rsquo;entreprise concernées. Chacune oriente les recommandations et les questions de l&rsquo;IA.</p>
-            <div className="mt-8 grid gap-2.5 sm:grid-cols-2">
-              {(catalog?.functions ?? []).map((f) => {
-                const on = functions.includes(f.key);
-                return (
-                  <button
-                    key={f.key}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => toggleFunction(f.key)}
-                    className={`rounded-xl border-[1.5px] px-4 py-3 text-left transition-colors ${on ? "border-accent bg-accent-soft" : "border-border-strong hover:border-text-faint"}`}
-                  >
-                    <span className={`block text-[13.5px] font-semibold ${on ? "text-accent-strong" : "text-text"}`}>{f.label}</span>
-                    <span className="mt-0.5 block text-[12px] text-text-faint">{f.description}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        {STEPS[step] === "Outils" && (
-          <>
-            <h1 className="mt-3 font-display text-[30px] italic leading-tight md:text-[34px]">
-              Sur quels outils
-              <br />
-              travaillez-vous&nbsp;?
-            </h1>
-            <p className="mt-3.5 max-w-lg text-[15px] text-text-soft">
-              ERP, CRM, comptabilité, banque, BI, tableurs, bases de données… Plus l&rsquo;IA connaît vos outils, mieux elle sait où chercher vos données et quoi en faire.
-            </p>
-            <div className="mt-7">
-              {catalog ? (
-                <ToolsPicker tools={catalog.tools} categories={catalog.categories} selected={toolKeys} customTools={customTools} onChange={setToolKeys} onCustomChange={setCustomTools} />
-              ) : (
-                <p className="text-[13px] text-text-faint">{catalogError ?? "Chargement du catalogue…"}</p>
-              )}
-            </div>
-          </>
-        )}
+              <p className="mt-4 text-[13px] text-text-faint">Cochez ce que vous utilisez. Rien à cocher ? Passez simplement à la suite.</p>
+              <div className="mt-5">
+                {catalog && page ? (
+                  <ToolsPicker
+                    tools={catalog.tools}
+                    categories={catalog.categories}
+                    categoryKeys={page.categories}
+                    selected={toolKeys}
+                    customTools={customTools}
+                    onChange={setToolKeys}
+                    onCustomChange={setCustomTools}
+                    showCustom={STEPS[step] === "Outils:files"}
+                  />
+                ) : (
+                  <p className="text-[13px] text-text-faint">{catalogError ?? "Chargement…"}</p>
+                )}
+              </div>
+            </>
+          );
+        })()}
 
         {STEPS[step] === "Vos données" && (
           <>
@@ -423,7 +372,7 @@ export default function OnboardingWizard({
               {!AUTH_REQUIRED && <RecapRow label="Votre profil" value={`${userName.trim() || "Moi"} · ${ROLE_LABEL[role]}`} />}
               <RecapRow label="Taille de l'entreprise" value={size} />
               <RecapRow label="Pays" value={COUNTRY_OPTIONS.find((c) => c.code === country)?.label ?? country} />
-              <RecapRow label="Fonctions surveillées" value={functions.map((d) => catalog?.functions.find((o) => o.key === d)?.label ?? d).join(" · ") || "Aucune"} />
+              <RecapRow label="Vos enjeux" value={Object.values(answers).flat().length ? `${Object.values(answers).flat().length} réponses` : "Non renseignés"} />
               <RecapRow
                 label="Outils déclarés"
                 value={[...toolKeys.map((k) => catalog?.tools.find((t) => t.key === k)?.label ?? k), ...customTools].join(" · ") || "Aucun"}
