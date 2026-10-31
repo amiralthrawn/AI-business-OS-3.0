@@ -147,7 +147,7 @@ def test_fec_import_creates_third_parties_and_a_summary(client):
     res = client.post("/configuration/imports/fec", headers=headers, files={"file": ("fec.txt", fec)}, params={"tool": "pennylane"})
     assert res.status_code == 200, res.text
     body = res.json()
-    assert body["created"] == 2 and body["summary"]["revenue"] == 1000.0 and body["summary"]["purchases"] == 500.0
+    assert body["created"] == 4 and body["summary"]["revenue"] == 1000.0 and body["summary"]["purchases"] == 500.0
     assert [c["name"] for c in client.get("/customers", headers=headers).json()] == ["Acme SA"]
     assert [s["name"] for s in client.get("/suppliers", headers=headers).json()] == ["Texas Chips"]
 
@@ -228,3 +228,42 @@ def test_a_company_can_ask_to_be_helped_to_connect_a_tool(client):
     plan = client.get("/configuration/integration-plan", headers=headers).json()["tools"]
     assert plan[0]["connection"] == "requested" and plan[0]["status"] == "to_connect"
     assert client.post("/configuration/tools/odoo/request-connection", headers=headers).status_code == 404
+
+
+def test_fec_import_posts_real_sales_and_purchases_once(client, db_session):
+    from app.core.entities import Transaction, TransactionType
+
+    headers = _director(client)
+    fec = (
+        "JournalCode\tEcritureNum\tEcritureDate\tCompteNum\tCompAuxNum\tCompAuxLib\tDebit\tCredit\n"
+        "VE\t1\t20250105\t411000\tC1\tAcme SA\t1200,00\t0,00\n"
+        "VE\t1\t20250105\t707000\t\t\t0,00\t1000,00\n"
+        "AC\t2\t20250110\t401000\tF1\tTexas Chips\t0,00\t600,00\n"
+        "AC\t2\t20250110\t607000\t\t\t500,00\t0,00\n"
+    ).encode()
+    for _ in range(2):  # re-importing must not duplicate
+        res = client.post("/configuration/imports/fec", headers=headers, files={"file": ("fec.txt", fec)})
+        assert res.status_code == 200, res.text
+    rows = db_session.query(Transaction).all()
+    assert sorted((t.type, t.amount) for t in rows) == sorted(
+        [(TransactionType.SALES_ORDER, 1000.0), (TransactionType.INVOICE, 500.0)]
+    )
+    assert res.json()["detection"] is not None
+    overview = client.get("/finance/overview", headers=headers).json()
+    assert "1000" in str(overview) or "1000.0" in str(overview), overview
+
+
+def test_sales_and_purchases_files_become_transactions(client, db_session):
+    from app.core.entities import Transaction
+
+    headers = _director(client)
+    sales = "Date;Client;Montant;Statut\n2025-01-05;Acme SA;1 200,50;payé\n2025-02-01;Beta GmbH;300;en cours\n".encode()
+    res = client.post("/configuration/imports/auto", headers=headers, files={"file": ("ventes.csv", sales)})
+    assert res.status_code == 200, res.text
+    assert res.json()["kind"] == "sales" and res.json()["created"] == 2
+    again = client.post("/configuration/imports/auto", headers=headers, files={"file": ("ventes.csv", sales)}).json()
+    assert again["created"] == 0
+    assert db_session.query(Transaction).count() == 2
+    assert sorted(c["name"] for c in client.get("/customers", headers=headers).json()) == ["Acme SA", "Beta GmbH"]
+    other = _director(client, company="Autre", email="o@autre.example")
+    assert client.get("/customers", headers=other).json() == []

@@ -7,7 +7,10 @@ from app.access import policy as access
 from app.configuration import imports, sectors, service, tools
 from app.core.entities import Company
 from app.core.i18n import tx
+from app.core.events.bus import EventBus
 from app.database import get_db
+from app.dependencies import get_event_bus
+from app.intelligence.monitoring import run_monitoring_sweep
 
 router = APIRouter(prefix="/configuration", tags=["configuration"])
 
@@ -99,6 +102,7 @@ async def import_auto(
     file: UploadFile = File(...),
     tool: str | None = None,
     db: Session = Depends(get_db),
+    event_bus: EventBus = Depends(get_event_bus),
     _user: CurrentUser = Depends(require(access.WRITE_SETTINGS)),
 ) -> dict:
     """One drop zone for every file: the kind (FEC, customers, suppliers,
@@ -110,7 +114,7 @@ async def import_auto(
         kind = imports.detect_kind(file.filename or "", content)
     except imports.ImportError_ as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return await _run_import(db, company, kind, file.filename or "", content, tool)
+    return await _run_import(db, company, kind, file.filename or "", content, tool, event_bus)
 
 
 @router.post("/tools/{tool_key}/request-connection")
@@ -128,22 +132,24 @@ async def import_file(
     file: UploadFile = File(...),
     tool: str | None = None,
     db: Session = Depends(get_db),
+    event_bus: EventBus = Depends(get_event_bus),
     _user: CurrentUser = Depends(require(access.WRITE_SETTINGS)),
 ) -> dict:
-    if kind not in ("customers", "suppliers", "products", "fec"):
+    if kind not in ("customers", "suppliers", "products", "fec", "sales", "purchases"):
         raise HTTPException(status_code=404, detail=tx("Type d'import inconnu", "Unknown import type"))
     company = _company(db)
     content = await file.read(imports.MAX_BYTES + 1)
-    return await _run_import(db, company, kind, file.filename or "", content, tool)
+    return await _run_import(db, company, kind, file.filename or "", content, tool, event_bus)
 
 
-async def _run_import(db: Session, company: Company, kind: str, filename: str, content: bytes, tool: str | None) -> dict:
+async def _run_import(db: Session, company: Company, kind: str, filename: str, content: bytes, tool: str | None, event_bus: EventBus) -> dict:
     try:
         if kind == "fec":
             result, summary = imports.import_fec(db, company.id, content)
         else:
             summary = None
-            result = imports.import_entities(db, company.id, kind, imports.read_table(filename, content))
+            table = imports.read_table(filename, content)
+            result = imports.import_transactions(db, company.id, kind, table) if kind in ("sales", "purchases") else imports.import_entities(db, company.id, kind, table)
     except imports.ImportError_ as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -152,7 +158,15 @@ async def _run_import(db: Session, company: Company, kind: str, filename: str, c
         entry["summary"] = summary
     db.commit()
     service.record_import(db, company.id, tool, entry)
+    detection = None
+    if kind in ("fec", "sales", "purchases"):
+        try:
+            detection = run_monitoring_sweep(db, event_bus)
+            db.commit()
+        except Exception:  # detection must never make an import fail
+            db.rollback()
     return {
+        "detection": detection,
         "kind": kind,
         "rows": result.rows,
         "created": result.created,

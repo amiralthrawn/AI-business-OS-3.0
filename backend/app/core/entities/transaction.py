@@ -57,6 +57,9 @@ class Transaction(Base, IdMixin, TimestampMixin):
         Uuid, ForeignKey("commercial_document_lines.id"), nullable=True, index=True
     )
     quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # V3: where an imported transaction comes from ("fec:<journal>:<entry>" or
+    # "file:<kind>:<hash>"), so re-importing the same file updates, never duplicates.
+    external_ref: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
 
     supplier: Mapped["Supplier | None"] = relationship(back_populates="transactions")
     customer: Mapped["Customer | None"] = relationship(back_populates="transactions")

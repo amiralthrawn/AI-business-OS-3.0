@@ -8,14 +8,18 @@ skipped and reported, and re-importing the same file updates, never duplicates.
 """
 
 import csv
+import hashlib
 import io
+import re
+from datetime import datetime, timezone
 import unicodedata
 import uuid
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
-from app.core.entities import Customer, Product, Supplier
+from app.core.entities import Customer, Product, Supplier, Transaction
+from app.core.entities.transaction import TransactionStatus, TransactionType
 
 MAX_BYTES = 15 * 1024 * 1024
 MAX_ROWS = 50_000
@@ -275,12 +279,17 @@ def import_fec(session: Session, company_id: uuid.UUID, content: bytes) -> tuple
     upsert(Customer, customers)
     upsert(Supplier, suppliers)
     session.flush()
+    posted = _post_fec_transactions(session, company_id, rows)
+    result.created += posted[0]
+    result.updated += posted[1]
     summary = {
         "customers_found": len(customers),
         "suppliers_found": len(suppliers),
         "revenue": round(revenue, 2),
         "purchases": round(purchases, 2),
         "entries": len(rows),
+        "sales_posted": posted[2],
+        "purchases_posted": posted[3],
         "from": min(dates) if dates else None,
         "to": max(dates) if dates else None,
     }
@@ -304,6 +313,13 @@ def detect_kind(filename: str, content: bytes) -> str:
         pass
     rows = read_table(filename, content)
     columns = [_norm(c) for c in rows[0].keys()]
+    has_date = any(c in _TX_COLUMNS["date"] for c in columns)
+    has_amount = any(c in _TX_COLUMNS["amount"] for c in columns) or (any(c in _TX_COLUMNS["quantity"] for c in columns) and any(c in _TX_COLUMNS["unit_price"] for c in columns))
+    if has_date and has_amount:
+        buy_hint = any(t in name for t in ("achat", "purchase", "fournisseur", "supplier", "depense"))
+        sale_hint = any(t in name for t in ("vente", "sales", "facture", "invoice", "client", "customer", "commande"))
+        has_supplier_col = any(c in ("fournisseur", "supplier", "vendor", "nomfournisseur") for c in columns)
+        return "purchases" if (buy_hint and not sale_hint) or (has_supplier_col and not any(c in ("client", "customer", "nomclient") for c in columns)) else "sales"
     if any(c in _SYNONYMS["products"]["sku"] + _SYNONYMS["products"]["unit_cost"] + _SYNONYMS["products"]["sale_price"] for c in columns):
         return "products"
     for kind, tokens in (("suppliers", ("fournisseur", "supplier", "vendor")), ("products", ("article", "produit", "product", "stock", "catalogue")), ("customers", ("client", "customer", "prospect"))):
@@ -312,3 +328,174 @@ def detect_kind(filename: str, content: bytes) -> str:
     if any(c in ("fournisseur", "supplier", "vendor", "suppliername", "conditionsdepaiement", "paymentterms") for c in columns):
         return "suppliers"
     return "customers"
+
+
+# --- Transactions (sales and purchases) ------------------------------------
+
+_TX_COLUMNS = {
+    "date": ("date", "datefacture", "datedevente", "datedecommande", "dateecriture", "datedoperation", "datedachat", "day", "jour"),
+    "amount": ("montant", "montantht", "total", "totalht", "amount", "chiffredaffaires", "ca", "montantttc", "totalttc", "valeur"),
+    "quantity": ("quantite", "qte", "quantity", "qty", "qte"),
+    "unit_price": ("prixunitaire", "pu", "unitprice", "puht", "prixunitaireht"),
+    "sku": ("reference", "sku", "ref", "codearticle", "partnumber", "pn", "refarticle"),
+    "product": ("article", "produit", "designation", "product", "libelle", "description"),
+    "status": ("statut", "status", "etat", "paye", "reglement"),
+}
+_TX_PARTY = {
+    "sales": ("client", "customer", "nomclient", "raisonsociale", "societe", "acheteur", "compte"),
+    "purchases": ("fournisseur", "supplier", "vendor", "nomfournisseur", "raisonsociale", "societe"),
+}
+_PAID_WORDS = ("paye", "regle", "paid", "soldee", "solde", "encaisse")
+
+
+def _parse_date(text: str) -> datetime | None:
+    text = (text or "").strip()
+    if not text:
+        return None
+    for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%Y%m%d", "%d/%m/%y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(text[:19] if "%H" in pattern else text, pattern).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _tx_mapping(kind: str, columns: list[str]) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    candidates = {**_TX_COLUMNS, "party": _TX_PARTY[kind]}
+    for field_name, synonyms in candidates.items():
+        for column in columns:
+            if _norm(column) in synonyms and column not in mapping.values():
+                mapping[field_name] = column
+                break
+    return mapping
+
+
+def _party(session: Session, company_id: uuid.UUID, model, cache: dict, name: str):
+    key = _norm(name)
+    found = cache.get(key)
+    if found is None:
+        found = model(company_id=company_id, name=name[:255])
+        session.add(found)
+        session.flush()
+        cache[key] = found
+    return found
+
+
+def import_transactions(session: Session, company_id: uuid.UUID, kind: str, rows: list[dict[str, str]]) -> ImportResult:
+    """Sales (revenue) or purchases (costs) from a file: one row, one
+    transaction. Customers, suppliers and products are matched by name or
+    reference and created when they do not exist yet."""
+
+    result = ImportResult(kind=kind, rows=len(rows))
+    mapping = _tx_mapping(kind, list(rows[0].keys()) if rows else [])
+    result.recognised_columns = mapping
+    if "date" not in mapping or ("amount" not in mapping and not ("quantity" in mapping and "unit_price" in mapping)):
+        raise ImportError_(
+            "Colonnes introuvables. Il faut au minimum une date et un montant (ou une quantité et un prix unitaire). Colonnes lues : " + ", ".join(list(rows[0].keys())[:12]) + "."
+        )
+
+    ttype = TransactionType.SALES_ORDER if kind == "sales" else TransactionType.INVOICE
+    party_model = Customer if kind == "sales" else Supplier
+    parties = {_norm(r.name): r for r in session.query(party_model).filter_by(company_id=company_id).all()}
+    products = {}
+    for r in session.query(Product).filter_by(company_id=company_id).all():
+        products[_norm(r.sku)] = r
+        products.setdefault(_norm(r.name), r)
+    existing = {t.external_ref: t for t in session.query(Transaction).filter(Transaction.company_id == company_id, Transaction.external_ref.like(f"file:{kind}:%")).all()}
+    seen: dict[str, int] = {}
+
+    for line_number, row in enumerate(rows, start=2):
+        v = {f: row.get(col, "").strip() for f, col in mapping.items()}
+        when = _parse_date(v.get("date", ""))
+        quantity = _number(v.get("quantity", "")) if v.get("quantity") else None
+        amount = _number(v.get("amount", "")) if v.get("amount") else None
+        if amount is None and quantity is not None and v.get("unit_price"):
+            unit = _number(v["unit_price"])
+            amount = round(quantity * unit, 2) if unit is not None else None
+        if when is None or amount is None:
+            result.skipped += 1
+            if len(result.problems) < 10:
+                result.problems.append(f"Ligne {line_number} ignorée : " + ("date illisible." if when is None else "montant illisible."))
+            continue
+        digest = hashlib.sha1("|".join([v.get("date", ""), v.get("party", ""), v.get("amount", ""), v.get("sku", ""), v.get("product", ""), v.get("quantity", "")]).encode()).hexdigest()[:20]
+        seen[digest] = seen.get(digest, 0) + 1
+        ref = f"file:{kind}:{digest}:{seen[digest]}"
+
+        party = _party(session, company_id, party_model, parties, v["party"]) if v.get("party") else None
+        product = None
+        product_key = _norm(v.get("sku")) or _norm(v.get("product"))
+        if product_key:
+            product = products.get(product_key)
+            if product is None:
+                product = Product(company_id=company_id, name=(v.get("product") or v.get("sku"))[:255], sku=(v.get("sku") or None))
+                session.add(product)
+                session.flush()
+                products[product_key] = product
+        status = TransactionStatus.PAID if any(w in _norm(v.get("status")) for w in _PAID_WORDS) else TransactionStatus.CONFIRMED
+
+        tx = existing.get(ref)
+        created = tx is None
+        if created:
+            tx = Transaction(company_id=company_id, type=ttype, external_ref=ref, amount=amount, occurred_at=when)
+            session.add(tx)
+        tx.amount, tx.occurred_at, tx.status, tx.quantity = amount, when, status, quantity
+        tx.customer_id = party.id if kind == "sales" and party else None
+        tx.supplier_id = party.id if kind == "purchases" and party else None
+        tx.product_id = product.id if product else None
+        result.created += 1 if created else 0
+        result.updated += 0 if created else 1
+    session.flush()
+    return result
+
+
+def _post_fec_transactions(session: Session, company_id: uuid.UUID, rows: list[dict[str, str]]) -> tuple[int, int, int, int]:
+    """Each accounting entry that touches a customer account (411) becomes a
+    sale, each one that touches a supplier account (401) a purchase, valued at
+    the revenue (70) or expense (60-62) lines of the same entry, else at the
+    third-party line. Lettered entries are settled."""
+
+    entries: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for row in rows:
+        entries.setdefault((row.get("journalcode", ""), row.get("ecriturenum", "") or row.get("ecriturelib", "")), []).append(row)
+
+    customers = {_norm(c.name): c for c in session.query(Customer).filter_by(company_id=company_id).all()}
+    suppliers = {_norm(c.name): c for c in session.query(Supplier).filter_by(company_id=company_id).all()}
+    existing = {t.external_ref: t for t in session.query(Transaction).filter(Transaction.company_id == company_id, Transaction.external_ref.like("fec:%")).all()}
+    created = updated = sales = purchases = 0
+
+    for (journal, number), lines in entries.items():
+        party_411 = next((l for l in lines if l.get("comptenum", "").startswith("411") and l.get("compauxlib", "").strip()), None)
+        party_401 = next((l for l in lines if l.get("comptenum", "").startswith("401") and l.get("compauxlib", "").strip()), None)
+        if party_411 is None and party_401 is None:
+            continue
+        is_sale = party_411 is not None
+        anchor = party_411 if is_sale else party_401
+        if is_sale:
+            amount = sum((_number(l.get("credit", "")) or 0.0) - (_number(l.get("debit", "")) or 0.0) for l in lines if l.get("comptenum", "").startswith("70"))
+            if amount == 0:
+                amount = (_number(anchor.get("debit", "")) or 0.0) - (_number(anchor.get("credit", "")) or 0.0)
+        else:
+            amount = sum((_number(l.get("debit", "")) or 0.0) - (_number(l.get("credit", "")) or 0.0) for l in lines if l.get("comptenum", "")[:2] in ("60", "61", "62"))
+            if amount == 0:
+                amount = (_number(anchor.get("credit", "")) or 0.0) - (_number(anchor.get("debit", "")) or 0.0)
+        when = _parse_date(anchor.get("ecrituredate", ""))
+        if when is None or amount == 0:
+            continue
+        ref = f"fec:{journal}:{number}"[:120]
+        party = (customers if is_sale else suppliers).get(_norm(anchor.get("compauxlib")))
+        tx = existing.get(ref)
+        is_new = tx is None
+        if is_new:
+            tx = Transaction(company_id=company_id, external_ref=ref, type=TransactionType.SALES_ORDER if is_sale else TransactionType.INVOICE, amount=amount, occurred_at=when)
+            session.add(tx)
+        tx.amount, tx.occurred_at = amount, when
+        tx.status = TransactionStatus.PAID if any(l.get("ecriturelet", "").strip() for l in lines if l.get("comptenum", "").startswith(("411", "401"))) else TransactionStatus.CONFIRMED
+        tx.customer_id = party.id if is_sale and party else None
+        tx.supplier_id = party.id if not is_sale and party else None
+        created += 1 if is_new else 0
+        updated += 0 if is_new else 1
+        sales += 1 if is_sale else 0
+        purchases += 0 if is_sale else 1
+    session.flush()
+    return created, updated, sales, purchases

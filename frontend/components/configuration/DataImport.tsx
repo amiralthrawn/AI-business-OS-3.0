@@ -9,6 +9,8 @@ const KIND_LABEL: Record<ImportKind, string> = {
   customers: "clients",
   suppliers: "fournisseurs",
   products: "produits",
+  sales: "ventes",
+  purchases: "achats",
 };
 
 const fmt = (n: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(n);
