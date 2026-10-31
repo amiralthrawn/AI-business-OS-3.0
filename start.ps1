@@ -37,6 +37,15 @@ function Test-PortOpen {
     }
 }
 
+# Opens a PowerShell window running $Command. The command is passed encoded so
+# a folder name with spaces or parentheses ("AI-business-OS-3.0-main (1)")
+# cannot break it.
+function Start-Window {
+    param([string]$Command)
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($Command))
+    Start-Process powershell -ArgumentList @("-NoExit", "-EncodedCommand", $encoded) | Out-Null
+}
+
 Write-Host ""
 Write-Host "=== AI Business OS - launcher ===" -ForegroundColor Cyan
 Write-Host ""
@@ -115,8 +124,8 @@ if ($backendRunning) {
     Write-Host "[Backend]  Is Python 3.10+ installed and on PATH? (python --version)" -ForegroundColor Red
 } else {
     Write-Host "[Backend]  Starting FastAPI (uvicorn) ..." -ForegroundColor Cyan
-    $backendCommand = "cd `"$backendDir`"; Write-Host 'AI Business OS - Backend' -ForegroundColor Cyan; Write-Host 'http://localhost:$backendPort' -ForegroundColor Green; & `"$backendPython`" -m uvicorn app.main:app --reload"
-    Start-Process powershell -ArgumentList @("-NoExit", "-Command", $backendCommand) | Out-Null
+    $backendCommand = "Set-Location -LiteralPath '$($backendDir.Replace("'", "''"))'; Write-Host 'AI Business OS - Backend' -ForegroundColor Cyan; Write-Host 'http://localhost:$backendPort' -ForegroundColor Green; & '$($backendPython.Replace("'", "''"))' -m uvicorn app.main:app --reload"
+    Start-Window $backendCommand
     Write-Host "[Backend]  -> http://localhost:$backendPort (own window)" -ForegroundColor Green
 }
 
@@ -130,8 +139,8 @@ if (Test-PortOpen -Port $frontendPort) {
     Write-Host "[Frontend] Is Node.js installed? (node --version), then run start.bat again." -ForegroundColor Red
 } else {
     Write-Host "[Frontend] Starting Next.js (npm run dev) ..." -ForegroundColor Cyan
-    $frontendCommand = "cd `"$frontendDir`"; Write-Host 'AI Business OS - Frontend' -ForegroundColor Cyan; Write-Host 'http://localhost:$frontendPort' -ForegroundColor Green; npm run dev"
-    Start-Process powershell -ArgumentList @("-NoExit", "-Command", $frontendCommand) | Out-Null
+    $frontendCommand = "Set-Location -LiteralPath '$($frontendDir.Replace("'", "''"))'; Write-Host 'AI Business OS - Frontend' -ForegroundColor Cyan; Write-Host 'http://localhost:$frontendPort' -ForegroundColor Green; npm run dev"
+    Start-Window $frontendCommand
 
     Write-Host "[Frontend] Waiting for http://localhost:$frontendPort to respond before opening the browser ..." -ForegroundColor Cyan
     $ready = $false
