@@ -27,8 +27,20 @@ def _ensure_can_decide(db: Session, user: CurrentUser, task_id: uuid.UUID) -> No
 
 
 @router.get("", response_model=list[TaskRead])
-def list_tasks(db: Session = Depends(get_db)) -> list[Task]:
-    return list(db.query(Task).order_by(Task.created_at.desc()).all())
+def list_tasks(db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)) -> list[Task]:
+    from app.home.scoping import task_visible
+
+    return [t for t in db.query(Task).order_by(Task.created_at.desc()).all() if task_visible(user, t.domain)]
+
+
+@router.get("/pending-count")
+def pending_count(db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)) -> dict:
+    """How many proposals wait for THIS person's approval (the bell)."""
+
+    from app.core.entities.task import TaskStatus
+
+    pending = db.query(Task).filter_by(status=TaskStatus.PENDING_VALIDATION).all()
+    return {"count": len([t for t in pending if user.can_approve(t.domain)])}
 
 
 @router.post("", response_model=TaskRead)

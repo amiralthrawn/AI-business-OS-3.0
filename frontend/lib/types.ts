@@ -80,6 +80,9 @@ export interface AIPriorityItem {
   title: string;
   related_entity_type: RelatedEntityType | null;
   related_entity_id: string | null;
+  // The API's own field names for the object a priority is about.
+  entity_type?: RelatedEntityType | null;
+  entity_id?: string | null;
   impact: "low" | "medium" | "high";
   urgency: "low" | "medium" | "high";
   confidence: string;
@@ -102,7 +105,21 @@ export interface DecisionSummary {
   occurred_at: string;
 }
 
+export interface HomeViewer {
+  name: string | null;
+  role: string;
+  job_title: string | null;
+  areas: string[];
+}
+
+export interface HomeBriefing {
+  headline: string;
+  lines: string[];
+}
+
 export interface HomeResponse {
+  viewer?: HomeViewer | null;
+  briefing?: HomeBriefing | null;
   overview: {
     supplier_count: number;
     product_count: number;

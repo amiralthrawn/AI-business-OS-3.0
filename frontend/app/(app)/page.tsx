@@ -1,6 +1,8 @@
 import Link from "next/link";
 import OnboardingGate from "@/components/home/OnboardingGate";
-import DecisionToDoCard from "@/components/home/DecisionToDoCard";
+import BriefingCard from "@/components/home/BriefingCard";
+import DataLevel from "@/components/home/DataLevel";
+import RecommendationCard from "@/components/home/RecommendationCard";
 import NarrativeCard from "@/components/home/NarrativeCard";
 import OSActivityRow from "@/components/home/OSActivityRow";
 import HomeAskAI from "@/components/home/HomeAskAI";
@@ -77,8 +79,8 @@ export default async function CommandCenterPage() {
       <OnboardingGate needsSetup={needsSetup} />
 
       <PageHeader
-        title="Bonjour."
-        description="Voici ce qui se passe dans votre entreprise aujourd'hui."
+        title={`Bonjour${me?.profile?.name ? ` ${me.profile.name.split(" ")[0]}` : ""}.`}
+        description="Voici ce que l'IA a remarqué pour vous aujourd'hui."
         action={
           <div className="hidden items-center gap-1.5 sm:flex">
             <span className="h-1.5 w-1.5 rounded-full bg-success" />
@@ -91,8 +93,50 @@ export default async function CommandCenterPage() {
 
       {home && (
         <>
-          {/* INDICATEURS PRINCIPAUX -- vivants (compteurs animés), jamais un dashboard froid */}
-          {finance && (
+          {/* NIVEAU 1 -- l'IA d'abord : le point du jour, puis les recommandations */}
+          {home.briefing && <BriefingCard briefing={home.briefing} viewer={home.viewer} />}
+
+          <section>
+            <div className="mb-5 flex items-baseline gap-2.5">
+              <span className="text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Ce que l&rsquo;IA vous recommande</span>
+              {toDecide.length > 0 && <Badge label={`${toDecide.length} sujet${toDecide.length > 1 ? "s" : ""}`} tone="accent" />}
+            </div>
+            {toDecide.length === 0 ? (
+              <EmptyState message="Aucune recommandation pour l'instant. Elles apparaissent dès que l'IA a vos données." />
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {toDecide.map((item, i) => (
+                  <RecommendationCard key={`${item.kind}-${item.entity_id ?? item.related_entity_id ?? i}`} item={item} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {pendingTasks.length > 0 && (
+            <section>
+              <div className="mb-5 flex items-baseline gap-2.5">
+                <span className="text-[11.5px] font-bold tracking-wide text-text-faint uppercase">À valider</span>
+                <Badge label={`${pendingTasks.length} action${pendingTasks.length > 1 ? "s" : ""}`} tone="warning" />
+              </div>
+              <ul className="space-y-3">
+                {pendingTasks.map((task) => (
+                  <TaskCard key={task.id} task={task} />
+                ))}
+              </ul>
+              <p className="mt-3 px-1 text-[11.5px] text-text-faint">Aucune action n&rsquo;est exécutée sans votre validation.</p>
+            </section>
+          )}
+
+          {can(me?.permissions, "action:ask_ai") && (
+            <section>
+              <span className="mb-5 block text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Demander à l&rsquo;IA</span>
+              <Card className="p-6">
+                <HomeAskAI />
+              </Card>
+            </section>
+          )}
+
+          {finance && can(me?.permissions, "view:finance") && (
             <section className="grid gap-5 md:grid-cols-3">
               <StatCard
                 label="Chiffre d'affaires"
@@ -119,116 +163,76 @@ export default async function CommandCenterPage() {
             </section>
           )}
 
-          {/* État des secteurs -- un pouls cliquable, jamais un tableau de bord */}
-          <section className="flex flex-wrap gap-3">
-            {SECTOR_DOMAINS.map(({ domain, label }) => {
-              const state = sectorState(home!.priorities, domain);
-              return (
-                <Link
-                  key={domain}
-                  href={`/actions/activity?domain=${domain}`}
-                  className="flex items-center gap-2.5 rounded-full border border-border bg-surface px-4 py-2 transition-colors hover:border-border-strong"
-                >
-                  <span className="text-[13px] font-semibold text-text">{label}</span>
-                  <Badge label={state.label} tone={state.tone} />
-                </Link>
-              );
-            })}
-          </section>
-
-          {/* OPÉRATIONS EN COURS (V2) -- affaires, relances, achats, validations */}
-          <HomeOperations />
-
-          {/* VUE DIRIGEANT (V2.1) -- visible selon les accès du profil */}
-          <HomeDirector />
-
-          {/* À DÉCIDER */}
-          <section>
-            <div className="mb-5 flex items-baseline gap-2.5">
-              <span className="text-[11.5px] font-bold tracking-wide text-text-faint uppercase">À décider</span>
-              {toDecide.length > 0 && <Badge label={`${toDecide.length} sujet${toDecide.length > 1 ? "s" : ""}`} tone="accent" />}
-            </div>
-            {toDecide.length === 0 ? (
-              <EmptyState message="Rien ne nécessite votre décision pour l'instant." />
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {toDecide.map((item, i) => (
-                  <DecisionToDoCard key={`${item.kind}-${item.related_entity_id ?? i}`} item={item} />
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* À FAIRE */}
-          <section>
-            <div className="mb-5 flex items-baseline gap-2.5">
-              <span className="text-[11.5px] font-bold tracking-wide text-text-faint uppercase">À faire</span>
-              {pendingTasks.length > 0 && <Badge label={`${pendingTasks.length} action${pendingTasks.length > 1 ? "s" : ""}`} tone="warning" />}
-            </div>
-            {pendingTasks.length === 0 ? (
-              <EmptyState message="Rien en attente de validation." />
-            ) : (
-              <ul className="space-y-3">
-                {pendingTasks.map((task) => (
-                  <TaskCard key={task.id} task={task} />
-                ))}
-              </ul>
-            )}
-            <p className="mt-3 px-1 text-[11.5px] text-text-faint">Aucune action n&rsquo;est exécutée sans votre validation.</p>
-          </section>
-
-          {/* CE QUE L'ENTREPRISE PROPOSE */}
-          {proposals.length > 0 && (
-            <section>
-              <span className="mb-5 block text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Ce que l&rsquo;entreprise propose</span>
-              <div className="grid gap-4 md:grid-cols-2">
-                {proposals.map((item) => (
-                  <NarrativeCard key={item.id} item={item} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* CE QUI S'EST PASSÉ */}
-          <section>
-            <span className="mb-5 block text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Ce qui s&rsquo;est passé</span>
-            {happened.length === 0 ? (
-              <EmptyState message="Rien à signaler pour l'instant." />
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {happened.map((item) => (
-                  <NarrativeCard key={item.id} item={item} showAction={false} />
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* DEMANDER À L'IA */}
-          <section>
-            <span className="mb-5 block text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Demander à l&rsquo;IA</span>
-            <Card className="p-6">
-              <HomeAskAI />
-            </Card>
-          </section>
-
-          {/* ACTIVITÉ DE L'OS */}
-          <section>
-            <div className="mb-4 flex items-baseline justify-between">
-              <span className="text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Activité de l&rsquo;OS</span>
-              <Link href="/actions/activity" className="text-[12.5px] font-medium text-accent-strong hover:underline">
-                Voir tout →
-              </Link>
-            </div>
-            <Card className="px-6">
-              {home.os_activity.length === 0 ? (
-                <div className="py-5">
-                  <EmptyState message="Aucune activité pour l'instant." />
-                </div>
-              ) : (
-                home.os_activity.map((item, i) => <OSActivityRow key={i} item={item} />)
+          {/* NIVEAU 2 -- le détail, replié : opérations, direction, vie de l'entreprise */}
+          <details className="group rounded-[20px] border border-border bg-surface">
+            <summary className="flex cursor-pointer select-none items-center justify-between px-7 py-5 text-[14px] font-semibold text-text">
+              Aller plus loin : opérations, direction, ce qui s&rsquo;est passé
+              <span className="text-[12px] font-medium text-text-faint group-open:hidden">Afficher</span>
+            </summary>
+            <div className="space-y-14 px-7 pb-8 pt-2">
+              {SECTOR_DOMAINS.filter(({ domain }) => can(me?.permissions, `view:${domain}`)).length > 0 && (
+                <section className="flex flex-wrap gap-3">
+                  {SECTOR_DOMAINS.filter(({ domain }) => can(me?.permissions, `view:${domain}`)).map(({ domain, label }) => {
+                    const state = sectorState(home!.priorities, domain);
+                    return (
+                      <Link
+                        key={domain}
+                        href={`/actions/activity?domain=${domain}`}
+                        className="flex items-center gap-2.5 rounded-full border border-border bg-surface px-4 py-2 transition-colors hover:border-border-strong"
+                      >
+                        <span className="text-[13px] font-semibold text-text">{label}</span>
+                        <Badge label={state.label} tone={state.tone} />
+                      </Link>
+                    );
+                  })}
+                </section>
               )}
-            </Card>
-          </section>
+
+              <HomeOperations />
+              <HomeDirector />
+
+              {proposals.length > 0 && (
+                <section>
+                  <span className="mb-5 block text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Ce que l&rsquo;entreprise propose</span>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {proposals.map((item) => (
+                      <NarrativeCard key={item.id} item={item} />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {happened.length > 0 && (
+                <section>
+                  <span className="mb-5 block text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Ce qui s&rsquo;est passé</span>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {happened.map((item) => (
+                      <NarrativeCard key={item.id} item={item} showAction={false} />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {home.os_activity.length > 0 && (
+                <section>
+                  <div className="mb-4 flex items-baseline justify-between">
+                    <span className="text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Activité de l&rsquo;OS</span>
+                    <Link href="/actions/activity" className="text-[12.5px] font-medium text-accent-strong hover:underline">
+                      Voir tout →
+                    </Link>
+                  </div>
+                  <Card className="px-6">
+                    {home.os_activity.map((item, i) => (
+                      <OSActivityRow key={i} item={item} />
+                    ))}
+                  </Card>
+                </section>
+              )}
+            </div>
+          </details>
+
+          {/* NIVEAU 3 -- les données techniques derrière tout cela */}
+          <DataLevel permissions={me?.permissions} />
         </>
       )}
     </main>

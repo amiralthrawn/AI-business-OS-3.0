@@ -122,7 +122,21 @@ class CompanyNarrativeItemRead(BaseModel):
     related_entity_name: str | None
 
 
+class ViewerRead(BaseModel):
+    name: str | None
+    role: str
+    job_title: str | None
+    areas: list[str]
+
+
+class BriefingRead(BaseModel):
+    headline: str
+    lines: list[str]
+
+
 class HomeResponse(BaseModel):
+    viewer: ViewerRead | None = None
+    briefing: BriefingRead | None = None
     overview: OverviewSummary
     priorities: list[AIPriorityRead]
     risks: RisksSummary

@@ -78,3 +78,9 @@ There is no authentication in this MVP: the selected profile id is sent as
 server-side, **not** a security boundary until a real auth layer produces the
 same `CurrentUser` from a verified token. No header = legacy single-operator
 mode with director rights (kept for V1 clients and tests).
+
+## V3 step 3: Home, tasks and the bell are scoped on the server
+
+- `GET /home` is cut by `app.home.scoping.scope_home`: priorities, decisions and activity only for domains the profile may view (finance, sales, procurement, people, communications; any other topic needs `view:intelligence`); risks, opportunities and recent events need `view:intelligence`; the narrative needs `view:communications`; overview counts are zeroed without the matching view permission.
+- Pending approvals on Home and the bell (`GET /actions/tasks/pending-count`) count only the tasks the person can approve (`can_approve`). `GET /actions/tasks` lists a task only to whoever may approve it or view its domain.
+- Home opens on a deterministic briefing (`briefing`) written from the same cut, plus `viewer` (role, job title, areas seen). It adds the sector's key metrics when the company has configured its sector.

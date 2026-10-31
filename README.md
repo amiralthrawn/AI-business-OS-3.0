@@ -27,6 +27,7 @@ Pour arrêter, fermez les deux fenêtres « backend » et « frontend ».
 - **Configuration by the AI (step 2):** 55 sectors and 200+ tools (ERP, CRM, accounting, banks, BI, spreadsheets, databases, payment, HR, e-commerce…). The chosen sector gives the AI its vocabulary, key metrics, usual risks and outside factors; the chosen tools produce an integration plan with the exact export path of each tool.
 - **Real data import:** CSV, Excel and French FEC files are read for real into customers, suppliers, products and a financial summary. Columns are recognised by meaning; re-importing never duplicates.
 - **No demonstration data for a real company:** no demo mailbox, no fake "sent" email (an approved email is handed to the person, who sends it and confirms), no demo-site analysis.
+- **Three-level interface, adapted to the role (step 3):** Home opens on the AI's briefing for the person and its recommendations (level 1), each with its reasoning and options one click away (level 2), and links to the underlying data (level 3). `GET /home`, the task list and the approval bell are now cut on the server to what the profile may see and approve: an employee no longer receives the company's finance and intelligence picture.
 - **One-click launch:** `start.bat` now creates `.env`, installs dependencies and migrates the database by itself.
 
 ---

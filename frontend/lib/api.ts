@@ -179,6 +179,7 @@ export const getRisk = (id: string) => getJSON<RiskRead>(`/intelligence/risks/${
 export const getOpportunities = () => getJSON<OpportunityRead[]>("/intelligence/opportunities", "Opportunités introuvables");
 export const getOpportunity = (id: string) =>
   getJSON<OpportunityRead>(`/intelligence/opportunities/${id}`, "Opportunité introuvable");
+export const getPendingApprovalCount = () => getJSON<{ count: number }>("/actions/tasks/pending-count", "Compteur introuvable");
 export const getTasks = () => getJSON<TaskRead[]>("/actions/tasks", "Tâches introuvables");
 
 export async function askAI(question: string, context?: { objectType: string; objectId: string }): Promise<AskAIResponse> {
