@@ -551,3 +551,44 @@ export const recordRefund = (docId: string, payload: { occurred_at?: string } = 
   sendJSON<CreditView>("POST", `/billing/credit-notes/${docId}/refund`, payload, "Enregistrement du remboursement impossible");
 export const reportNonconformity = (docId: string, payload: { line_id: string; quantity: number; note: string }) =>
   sendJSON<{ risk_id: string; risk_created: boolean }>("POST", `/billing/documents/${docId}/nonconformity`, payload, "Signalement impossible");
+
+// --- Calendar (V3) -----------------------------------------------------------
+
+export type CalendarKind = { label: string; group: "money" | "operations" | "ai" | "mine" };
+export type CalendarItem = {
+  id: string;
+  kind: string;
+  kind_label: string;
+  group: CalendarKind["group"];
+  title: string;
+  at: string;
+  ends_at: string | null;
+  all_day: boolean;
+  period: "past" | "upcoming";
+  source: "ai" | "manual";
+  amount: number | null;
+  detail: string | null;
+  count: number;
+  entity_type: string | null;
+  entity_id: string | null;
+};
+export type CalendarResponse = { start: string; end: string; now: string; kinds: Record<string, CalendarKind>; events: CalendarItem[] };
+export type CalendarEventInput = { title: string; kind: string; starts_at: string; notes?: string | null };
+
+export const getCalendar = (start: string, end: string) =>
+  getJSON<CalendarResponse>(`/calendar?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, "Calendrier indisponible");
+
+async function calendarWrite(path: string, method: string, body?: unknown) {
+  const res = await apiFetch(`${API_URL}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail ?? `Échec (${res.status})`);
+  }
+}
+export const createCalendarEvent = (input: CalendarEventInput) => calendarWrite("/calendar/events", "POST", input);
+export const deleteCalendarEvent = (id: string) => calendarWrite(`/calendar/events/${id}`, "DELETE");

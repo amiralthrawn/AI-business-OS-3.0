@@ -19,6 +19,7 @@ from app.connectors.router import router as connectors_router
 from app.data.router import router as data_router
 from app.database import engine
 from app.decision.router import router as decision_router
+from app.agenda.router import router as calendar_router
 from app.domains.finance.router import router as finance_router
 from app.domains.procurement.router import router as procurement_router
 from app.domains.sales.router import router as sales_router
@@ -107,6 +108,7 @@ app.include_router(interpretation_router, dependencies=[*SIGNED_IN, Depends(requ
 app.include_router(decision_router, dependencies=[*SIGNED_IN, Depends(require(access.VIEW_INTELLIGENCE))])
 app.include_router(tasks_router, dependencies=[*SIGNED_IN, Depends(require(access.VIEW_ACTIONS))])
 app.include_router(home_router, dependencies=SIGNED_IN)
+app.include_router(calendar_router, dependencies=SIGNED_IN)
 app.include_router(ask_ai_router, dependencies=[*SIGNED_IN, Depends(require(access.ACTION_ASK_AI))])
 # V2: business objects, relationships, transactions (brain/architecture.md).
 # Workspace routers carry their view permission (brain/permissions.md): the

@@ -14,6 +14,7 @@ const TITLE_KEYS: Record<string, LabelKey> = {
   "/business/procurement": "nav.procurement",
   "/business/sales": "nav.sales",
   "/data": "nav.data_group",
+  "/calendar": "nav.calendar",
   "/data/products": "nav.catalog",
   "/data/customers": "nav.sales",
   "/data/suppliers": "nav.procurement",

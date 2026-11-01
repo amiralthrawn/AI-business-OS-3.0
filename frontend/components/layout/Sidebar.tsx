@@ -21,6 +21,7 @@ const GROUPS: { labelKey: LabelKey; items: NavItem[] }[] = [
     items: [
       { href: "/", labelKey: "nav.decisions", permission: "", match: ["/"] },
       { href: "/data", labelKey: "nav.data_group", permission: "", match: DATA_MATCH },
+      { href: "/calendar", labelKey: "nav.calendar", permission: "", match: ["/calendar"] },
       { href: "/ai/ask-ai", labelKey: "nav.ask_ai", permission: "action:ask_ai", match: ["/ai"] },
     ],
   },

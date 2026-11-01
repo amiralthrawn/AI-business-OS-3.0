@@ -13,6 +13,7 @@ from app.core.entities.commercial_document import (
     DocumentKind,
 )
 from app.core.entities.communication import Communication, CommunicationDirection
+from app.core.entities.calendar_event import CalendarEvent
 from app.core.entities.company import Company
 from app.core.entities.contact import Contact
 from app.core.entities.customer import Customer
@@ -50,6 +51,7 @@ __all__ = [
     "Risk",
     "RiskSeverity",
     "RiskStatus",
+    "CalendarEvent",
     "Opportunity",
     "OpportunityStatus",
     "EventLogEntry",
