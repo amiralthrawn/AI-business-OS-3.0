@@ -1,5 +1,6 @@
 import uuid
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.entities import (
@@ -242,9 +243,32 @@ class HomeService:
                     "decision_options": area.decision_options,
                     "detail_kind": detail_kind,
                     "detail_id": detail_id,
+                    "amount_eur": self._exposure_eur(area.entity_type, area.entity_id),
                 }
             )
+        # The feed is ordered by what is at stake in euros (the amount of
+        # business that goes through the object concerned), then by the AI's
+        # own impact/urgency.
+        rank = {"high": 2, "medium": 1, "low": 0}
+        items.sort(key=lambda i: (i["amount_eur"] or 0.0, rank.get(i["impact"], 0), rank.get(i["urgency"], 0)), reverse=True)
         return items
+
+    def _exposure_eur(self, entity_type, entity_id) -> float | None:
+        """Honest "amount concerned": the total business already booked with
+        the customer / supplier / product the signal is about. It is an
+        exposure, not a forecast of loss -- None when it cannot be measured."""
+
+        if entity_type is None or entity_id is None:
+            return None
+        column = {
+            "customer": Transaction.customer_id,
+            "supplier": Transaction.supplier_id,
+            "product": Transaction.product_id,
+        }.get(getattr(entity_type, "value", entity_type))
+        if column is None:
+            return None
+        total = self.session.query(func.coalesce(func.sum(Transaction.amount), 0.0)).filter(column == entity_id).scalar()
+        return round(float(total), 2) if total else None
 
     def get_decisions(self, limit: int = DEFAULT_DECISIONS_LIMIT) -> list[dict]:
         """Decisions potentially requiring human attention -- re-hydrated

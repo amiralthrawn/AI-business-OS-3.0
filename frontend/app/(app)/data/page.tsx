@@ -1,8 +1,16 @@
-import { redirect } from "next/navigation";
+import DataHub from "@/components/data/DataHub";
+import PageHeader from "@/components/ui/PageHeader";
+import { getMe } from "@/lib/api";
 
-// V2: the former Data hub (4 widgets) is replaced by the workspaces --
-// Catalogue (products, stock), Ventes > Clients, Achats > Fournisseurs,
-// Finance > transactions (brain/navigation_v2.md).
-export default function DataPage() {
-  redirect("/data/products");
+export const dynamic = "force-dynamic";
+
+// Level 3 of the product: all the detailed tables behind one menu entry.
+export default async function DataPage() {
+  const me = await getMe().catch(() => null);
+  return (
+    <main className="space-y-8 p-8 md:p-12">
+      <PageHeader title="Données" description="Tous les tableaux détaillés, pour vérifier un chiffre à la source." />
+      <DataHub permissions={me?.permissions} />
+    </main>
+  );
 }

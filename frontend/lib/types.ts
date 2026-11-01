@@ -91,6 +91,8 @@ export interface AIPriorityItem {
   decision_options: { label: string; expected_benefit: string; trade_offs: string }[] | null;
   detail_kind: "risk" | "opportunity" | null;
   detail_id: string | null;
+  // Business already booked with the object concerned (an exposure, not a forecast).
+  amount_eur?: number | null;
 }
 
 export interface DecisionSummary {

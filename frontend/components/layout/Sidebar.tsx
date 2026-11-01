@@ -14,30 +14,13 @@ import { type LabelKey, useLocale } from "@/lib/i18n";
 // the backend is still single-company.
 // `permission` may list alternatives ("a|b"): visible with any of them.
 type NavItem = { href: string; labelKey: LabelKey; permission: string; match: string[] };
+const DATA_MATCH = ["/data", "/business", "/communications", "/people", "/intelligence", "/actions", "/direction", "/documents"];
 const GROUPS: { labelKey: LabelKey; items: NavItem[] }[] = [
-  { labelKey: "nav.home", items: [{ href: "/", labelKey: "nav.command_center", permission: "", match: ["/"] }] },
   {
-    labelKey: "nav.operations_group",
+    labelKey: "nav.home",
     items: [
-      { href: "/business/sales", labelKey: "nav.sales", permission: "view:sales", match: ["/business/sales", "/data/customers"] },
-      { href: "/business/procurement", labelKey: "nav.procurement", permission: "view:procurement", match: ["/business/procurement", "/data/suppliers"] },
-      { href: "/data/products", labelKey: "nav.catalog", permission: "view:catalog", match: ["/data/products", "/data"] },
-      { href: "/communications", labelKey: "nav.communications", permission: "view:communications", match: ["/communications", "/data/contacts"] },
-      { href: "/people", labelKey: "nav.people", permission: "view:people", match: ["/people"] },
-    ],
-  },
-  {
-    labelKey: "nav.steering_group",
-    items: [
-      { href: "/business/finance", labelKey: "nav.finance", permission: "view:finance", match: ["/business/finance", "/data/transactions"] },
-      { href: "/intelligence/risks", labelKey: "nav.intelligence", permission: "view:intelligence", match: ["/intelligence"] },
-      { href: "/direction", labelKey: "nav.direction", permission: "view:treasury|view:ownership", match: ["/direction"] },
-    ],
-  },
-  {
-    labelKey: "nav.actions_group",
-    items: [
-      { href: "/actions/tasks", labelKey: "nav.actions", permission: "view:actions", match: ["/actions"] },
+      { href: "/", labelKey: "nav.decisions", permission: "", match: ["/"] },
+      { href: "/data", labelKey: "nav.data_group", permission: "", match: DATA_MATCH },
       { href: "/ai/ask-ai", labelKey: "nav.ask_ai", permission: "action:ask_ai", match: ["/ai"] },
     ],
   },

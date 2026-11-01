@@ -15,6 +15,7 @@ export type Locale = "fr" | "en";
 const DICT = {
   "nav.home": { fr: "Accueil", en: "Home" },
   "nav.command_center": { fr: "Centre de contrôle", en: "Command Center" },
+  "nav.decisions": { fr: "Décisions", en: "Decisions" },
   "nav.company_group": { fr: "Entreprise", en: "Business" },
   "nav.finance": { fr: "Finance", en: "Finance" },
   "nav.procurement": { fr: "Achats", en: "Procurement" },

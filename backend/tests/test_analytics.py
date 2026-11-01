@@ -72,7 +72,7 @@ def test_monthly_series_is_real_and_zero_filled(db_session):
             Transaction(
                 company_id=company.id, supplier_id=supplier.id, product_id=product.id,
                 type=TransactionType.PURCHASE_ORDER, status=TransactionStatus.CONFIRMED,
-                amount=50.0, currency="EUR", occurred_at=now - timedelta(days=1),
+                amount=50.0, currency="EUR", occurred_at=now,
             ),
             Transaction(
                 company_id=company.id, supplier_id=supplier.id, product_id=product.id,

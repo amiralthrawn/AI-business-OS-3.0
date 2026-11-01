@@ -67,6 +67,7 @@ class AIPriorityRead(BaseModel):
     decision_options: list[dict] | None
     detail_kind: str | None
     detail_id: uuid.UUID | None
+    amount_eur: float | None = None
 
 
 class DecisionRecommendationRead(BaseModel):
