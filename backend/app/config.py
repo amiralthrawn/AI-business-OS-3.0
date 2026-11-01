@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     # V2.1 web sourcing: a Brave Search API key enables real web search for
     # supplier sourcing. Unset -> sourcing uses internal data only, and says so.
     brave_search_api_key: str | None = None
+    # V3 Veilleur agent: Perplexity (Sonar) searches the live web. Unset ->
+    # the Veilleur says it is not configured and finds nothing (never invents).
+    perplexity_api_key: str | None = None
+    perplexity_model: str = "sonar"
+    # Runs the agents around the clock (app.agents.scheduler).
+    agents_scheduler: bool = True
     # V3 authentication (app.auth). "required": every API call needs a
     # signed-in user's token and only sees that user's company. "legacy": the
     # V2 behavior (no sign-in, X-User-Id profile switcher, one company) --

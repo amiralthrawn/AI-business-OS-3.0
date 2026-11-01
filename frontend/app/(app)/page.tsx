@@ -1,6 +1,8 @@
 import Link from "next/link";
 import OnboardingGate from "@/components/home/OnboardingGate";
 import BriefingCard from "@/components/home/BriefingCard";
+import AgentFeed from "@/components/home/AgentFeed";
+import GuideCard from "@/components/home/GuideCard";
 import DecisionFeed from "@/components/home/DecisionFeed";
 import HomeAskAI from "@/components/home/HomeAskAI";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
@@ -8,7 +10,7 @@ import Card from "@/components/ui/Card";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import PageHeader from "@/components/ui/PageHeader";
 import StatCard from "@/components/ui/StatCard";
-import { getCompany, getFinanceOverview, getHomeView, getMe } from "@/lib/api";
+import { getAgentsOverview, getCompany, getFinanceOverview, getHomeView, getMe } from "@/lib/api";
 import { can } from "@/lib/objects";
 import type { FinanceOverview, HomeResponse } from "@/lib/types";
 
@@ -29,6 +31,8 @@ export default async function CommandCenterPage() {
 
   const [me, company] = await Promise.all([getMe().catch(() => null), getCompany().catch(() => null)]);
   const needsSetup = !!company && !company.industry && can(me?.permissions, "write:settings");
+
+  const agents = home ? await getAgentsOverview().catch(() => null) : null;
 
   let finance: FinanceOverview | null = null;
   if (home && can(me?.permissions, "view:finance")) finance = await getFinanceOverview().catch(() => null);
@@ -55,7 +59,7 @@ export default async function CommandCenterPage() {
                 <StatCard label="Coûts" value={<AnimatedNumber value={finance.total_costs} format="EUR" />} />
                 <StatCard
                   label="Marge globale"
-                  value={finance.overall_margin_pct === null ? "—" : <AnimatedNumber value={finance.overall_margin_pct * 100} format="percent" />}
+                  value={finance.overall_margin_pct === null || finance.total_costs === 0 ? "—" : <AnimatedNumber value={finance.overall_margin_pct * 100} format="percent" />}
                   emphasize={(finance.overall_margin_pct ?? 0) < 0}
                 />
               </>
@@ -68,7 +72,11 @@ export default async function CommandCenterPage() {
             )}
           </section>
 
+          {agents?.guide && <GuideCard guide={agents.guide} />}
+
           {home.briefing && <BriefingCard briefing={home.briefing} viewer={home.viewer} />}
+
+          {agents && <AgentFeed proposals={agents.proposals} />}
 
           <section>
             <span className="mb-4 block text-[11.5px] font-bold uppercase tracking-wide text-text-faint">Vos décisions, par montant concerné</span>

@@ -163,7 +163,7 @@ def build_calendar(db: Session, user, start: datetime, end: datetime) -> dict:
 
     # --- written by hand
     for e in db.query(CalendarEvent).filter(CalendarEvent.starts_at >= start, CalendarEvent.starts_at < end).all():
-        items.append(_item(e.kind if e.kind in KINDS else "other", e.title, e.starts_at, source="manual", now=now, detail=e.notes,
+        items.append(_item(e.kind if e.kind in KINDS else "other", e.title, e.starts_at, source=e.source if e.source != "manual" else "manual", now=now, detail=e.notes,
                            event_id=e.id, ends_at=e.ends_at, all_day=e.all_day))
 
     items.sort(key=lambda i: i["at"])

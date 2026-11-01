@@ -161,13 +161,13 @@ export default function CalendarView() {
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-text">{e.title}</p>
                       <p className="text-[12px] text-text-faint">
-                        {e.kind_label} · {e.period === "past" ? "passé" : "à venir"} · {e.source === "ai" ? "placé par l'IA" : "ajouté par vous"}
+                        {e.kind_label} · {e.period === "past" ? "passé" : "à venir"} · {e.source === "manual" ? "ajouté par vous" : e.source === "veilleur" ? "placé par le Veilleur" : "placé par l'IA"}
                       </p>
                       {e.detail && <p className="text-[12.5px] text-text-soft">{e.detail}</p>}
                       {e.amount !== null && e.count === 1 && <p className="text-[12.5px] text-text-soft">{eur(e.amount)}</p>}
                       <div className="mt-1 flex gap-3 text-[12px] font-semibold">
                         {href(e) && <Link href={href(e)!} className="text-accent-strong hover:underline">Ouvrir →</Link>}
-                        {e.source === "manual" && (
+                        {(e.source === "manual" || e.source === "veilleur") && (
                           <button className="text-danger hover:underline" onClick={async () => { await deleteCalendarEvent(e.id); load(); }}>Supprimer</button>
                         )}
                       </div>

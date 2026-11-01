@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -20,6 +22,8 @@ from app.data.router import router as data_router
 from app.database import engine
 from app.decision.router import router as decision_router
 from app.agenda.router import router as calendar_router
+from app.agents import scheduler as agents_scheduler
+from app.agents.router import router as agents_router
 from app.domains.finance.router import router as finance_router
 from app.domains.procurement.router import router as procurement_router
 from app.domains.sales.router import router as sales_router
@@ -46,7 +50,18 @@ if _settings.auth_mode != "legacy" and not _settings.auth_secret_key:
         "(or set AUTH_MODE=legacy for the V2 demo without sign-in)."
     )
 
-app = FastAPI(title="AI Business OS", version="3.0.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # The agents work around the clock (app.agents.scheduler); off in tests.
+    task = asyncio.create_task(agents_scheduler.loop()) if _settings.agents_scheduler else None
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+
+
+app = FastAPI(title="AI Business OS", version="3.0.0", lifespan=lifespan)
 
 # The frontend's Server Components fetch server-to-server (no CORS involved),
 # but client components (Ask AI's form, Tasks board, ...) call this API
@@ -109,6 +124,7 @@ app.include_router(decision_router, dependencies=[*SIGNED_IN, Depends(require(ac
 app.include_router(tasks_router, dependencies=[*SIGNED_IN, Depends(require(access.VIEW_ACTIONS))])
 app.include_router(home_router, dependencies=SIGNED_IN)
 app.include_router(calendar_router, dependencies=SIGNED_IN)
+app.include_router(agents_router, dependencies=SIGNED_IN)
 app.include_router(ask_ai_router, dependencies=[*SIGNED_IN, Depends(require(access.ACTION_ASK_AI))])
 # V2: business objects, relationships, transactions (brain/architecture.md).
 # Workspace routers carry their view permission (brain/permissions.md): the

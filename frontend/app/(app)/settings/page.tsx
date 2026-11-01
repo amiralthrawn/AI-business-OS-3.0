@@ -4,14 +4,15 @@ import SettingsForm from "@/components/settings/SettingsForm";
 import UsersAndRoles from "@/components/settings/UsersAndRoles";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import PageHeader from "@/components/ui/PageHeader";
-import { getAccessCatalog, getBusinessContext, getCompany, getConfigurationSuggestions, getCustomRoles, getMe, getRoles, getUsers } from "@/lib/api";
+import AgentsPanel from "@/components/settings/AgentsPanel";
+import { getAccessCatalog, getAgentsOverview, getBusinessContext, getCompany, getConfigurationSuggestions, getCustomRoles, getMe, getRoles, getUsers } from "@/lib/api";
 import { can } from "@/lib/objects";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   let error: string | null = null;
-  const [company, context, suggestions, users, roles, me, catalog, customRoles] = await Promise.all([
+  const [company, context, suggestions, users, roles, me, catalog, customRoles, agents] = await Promise.all([
     getCompany().catch(() => null),
     getBusinessContext().catch(() => null),
     getConfigurationSuggestions().catch(() => []),
@@ -20,6 +21,7 @@ export default async function SettingsPage() {
     getMe().catch(() => null),
     getAccessCatalog().catch(() => null),
     getCustomRoles().catch(() => []),
+    getAgentsOverview().catch(() => null),
   ]);
 
   if (!company || !context) {
@@ -43,6 +45,12 @@ export default async function SettingsPage() {
       />
       {error && <ErrorBanner message={error} />}
       {company && context && <SettingsForm company={company} context={context} suggestions={suggestions} canEdit={can(me?.permissions, "write:settings")} />}
+      {agents?.settings && (
+        <section>
+          <SectionLabel id="agents">Agents</SectionLabel>
+          <AgentsPanel overview={agents} />
+        </section>
+      )}
       <section>
         <SectionLabel id="profils">Équipe et accès</SectionLabel>
         <UsersAndRoles users={users} roles={roles} customRoles={customRoles} catalog={catalog} canManage={can(me?.permissions, "write:settings")} selfId={me?.profile?.id ?? null} />

@@ -565,7 +565,7 @@ export type CalendarItem = {
   ends_at: string | null;
   all_day: boolean;
   period: "past" | "upcoming";
-  source: "ai" | "manual";
+  source: "ai" | "manual" | "veilleur";
   amount: number | null;
   detail: string | null;
   count: number;
@@ -592,3 +592,44 @@ async function calendarWrite(path: string, method: string, body?: unknown) {
 }
 export const createCalendarEvent = (input: CalendarEventInput) => calendarWrite("/calendar/events", "POST", input);
 export const deleteCalendarEvent = (id: string) => calendarWrite(`/calendar/events/${id}`, "DELETE");
+
+// --- Agents (Veilleur, Analyste, guide) -------------------------------------
+
+export type AgentProposal = {
+  id: string;
+  agent: string;
+  kind: "finding" | "missing_info";
+  category: string | null;
+  title: string;
+  summary: string | null;
+  why: string | null;
+  sources: string[];
+  event_date: string | null;
+  action_type: "calendar_event" | "task" | "none";
+  action_text: string | null;
+  status: "new" | "auto_done" | "accepted" | "ignored" | "undone" | "answered";
+  created_at: string;
+  answer: string | null;
+};
+export type AgentsOverview = {
+  guide: { percent: number; steps: { title: string; why: string; href: string; weight: number }[] } | null;
+  proposals: AgentProposal[];
+  agents: { key: string; label: string; description: string; configured: boolean; last_status: string | null; last_message: string | null; last_run_at: string | null }[];
+  settings: { enabled: boolean; autonomy: Record<string, "ask" | "auto"> } | null;
+  cadence_hours: number;
+};
+
+export const getAgentsOverview = () => getJSON<AgentsOverview>("/agents/overview", "Agents indisponibles");
+export async function agentsCall<T = unknown>(path: string, method = "POST", body?: unknown): Promise<T> {
+  const res = await apiFetch(`${API_URL}/agents${path}`, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail ?? `Échec (${res.status})`);
+  }
+  return res.json();
+}

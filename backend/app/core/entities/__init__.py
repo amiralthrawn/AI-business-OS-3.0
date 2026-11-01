@@ -1,3 +1,4 @@
+from app.core.entities.agent import AgentProposal, AgentRun
 from app.core.entities.base import Base, RelatedEntityType, ValueBasis
 from app.core.entities.business_context import BusinessContext
 from app.core.entities.catalog import ProductSupplier, StockKind, StockPosition
@@ -51,6 +52,8 @@ __all__ = [
     "Risk",
     "RiskSeverity",
     "RiskStatus",
+    "AgentProposal",
+    "AgentRun",
     "CalendarEvent",
     "Opportunity",
     "OpportunityStatus",

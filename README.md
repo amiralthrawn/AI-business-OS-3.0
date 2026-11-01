@@ -256,6 +256,8 @@ The backend reads `.env` at the repository root. Every value is optional for a l
 | `OPENAI_API_KEY` | Enables LLM rewording of explanations and drafts. Leave empty to run fully offline with deterministic text | empty |
 | `OPENAI_MODEL` | Model used when a key is set | `gpt-4o-mini` |
 | `ALLOWED_ORIGINS` | CORS origins for a deployed frontend. Empty = any `localhost` / `127.0.0.1` port | empty |
+| `PERPLEXITY_API_KEY` | Activates the Veilleur agent (live web watch through Perplexity Sonar, with sources). Empty = no external search, and the product says so | empty |
+| `AGENTS_SCHEDULER` | Keeps the agents running around the clock (every 3 h by day, 8 h by night, Paris time) | `true` |
 | `BRAVE_SEARCH_API_KEY` | Enables real web search in supplier sourcing. Empty = internal data only, and the run says so | empty |
 | `AUTH_SECRET_KEY` | **Required** (V3 sign-in): signs access tokens. Generate one with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. The API refuses to start without it | empty |
 | `AUTH_MODE` | `required` (sign-in, one space per company) or `legacy` (V2 demo: no sign-in, profile switcher). With `legacy`, also set `NEXT_PUBLIC_AUTH_MODE=legacy` in `frontend/.env.local` | `required` |

@@ -154,6 +154,7 @@ def ai_profile(config: dict) -> dict:
         "answer_notes": config.get("answer_notes") or {},
         "tools": declared,
         "custom_tools": config.get("custom_tools") or [],
+        "agent_knowledge": list(config.get("agent_knowledge") or [])[-10:],
     }
 
 
