@@ -49,9 +49,9 @@
   --color-success: var(--color-success);
   --color-success-soft: var(--color-success-soft);
 
-  --font-display: var(--font-display-src);
-  --font-body: var(--font-body-src);
-  --font-mono: var(--font-mono-src);
+  --font-display: "Fraunces Variable", Georgia, serif;
+  --font-body: "Plus Jakarta Sans Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
 
   --shadow-card: var(--shadow-card);
 }
