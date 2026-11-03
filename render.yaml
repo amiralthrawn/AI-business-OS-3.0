@@ -3,7 +3,7 @@
 # here: Render asks for the values marked `sync: false` and generates the signing key.
 databases:
   - name: aibos3-db
-    plan: basic-256mb
+    plan: free  # expires after 30 days: for a short test only, switch to basic-256mb to keep real data
     databaseName: aibos3
     user: aibos3
 
@@ -12,7 +12,7 @@ services:
     name: aibos3-api
     runtime: python
     rootDir: backend
-    plan: starter  # always on: the agents work around the clock, a sleeping service would stop them
+    plan: free  # sleeps after 15 min without visit (agents pause); use starter to keep them running 24h/24
     buildCommand: pip install -r requirements.txt
     startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
@@ -40,7 +40,7 @@ services:
     name: aibos3-web
     runtime: node
     rootDir: frontend
-    plan: starter
+    plan: free
     buildCommand: npm ci && npm run build
     startCommand: npm run start -- -p $PORT
     envVars:
