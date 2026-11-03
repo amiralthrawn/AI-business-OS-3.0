@@ -1,0 +1,50 @@
+# Render Blueprint for AI Business OS 3.0: one database, the API and the web app.
+# Dashboard > New > Blueprint > pick this repository. Secrets are never stored
+# here: Render asks for the values marked `sync: false` and generates the signing key.
+databases:
+  - name: aibos3-db
+    plan: basic-256mb
+    databaseName: aibos3
+    user: aibos3
+
+services:
+  - type: web
+    name: aibos3-api
+    runtime: python
+    rootDir: backend
+    plan: starter  # always on: the agents work around the clock, a sleeping service would stop them
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aibos3-db
+          property: connectionString
+      - key: AUTH_SECRET_KEY
+        generateValue: true
+      - key: AUTH_MODE
+        value: required
+      - key: AGENTS_SCHEDULER
+        value: "true"
+      - key: ALLOWED_ORIGINS
+        sync: false  # the web app address, e.g. https://aibos3-web.onrender.com
+      - key: FRONTEND_URL
+        sync: false  # same address, used in invitation links
+      - key: PERPLEXITY_API_KEY
+        sync: false
+
+  - type: web
+    name: aibos3-web
+    runtime: node
+    rootDir: frontend
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start -- -p $PORT
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: NEXT_PUBLIC_API_URL
+        sync: false  # the API address, e.g. https://aibos3-api.onrender.com
