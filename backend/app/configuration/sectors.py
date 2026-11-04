@@ -317,5 +317,15 @@ QCM: dict[str, dict[str, tuple[str, ...]]] = {
 }
 
 
+# Neutral answers offered at the end of every list, for a company that has no
+# specific improvement in mind, or has not analysed the question yet.
+NEUTRAL_CHOICES: dict[str, tuple[str, ...]] = {
+    "goals": ("Je souhaite avant tout automatiser le fonctionnement de mon entreprise",),
+    "problems": ("Je veux automatiser la gestion de mon entreprise", "Je souhaite un pilotage informatisé de mon activité"),
+    "externals": ("Je ne sais pas encore : je n'ai pas eu le temps de l'analyser",),
+}
+
+
 def qcm_for(group_key: str) -> dict[str, tuple[str, ...]]:
-    return QCM.get(group_key, QCM["generic"])
+    base = QCM.get(group_key, QCM["generic"])
+    return {key: (*choices, *NEUTRAL_CHOICES.get(key, ())) for key, choices in base.items()}
