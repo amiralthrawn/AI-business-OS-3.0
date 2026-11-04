@@ -19,7 +19,7 @@ type Outcome = { file: string; result?: ImportResultRead; error?: string };
 // One full page per declared tool: what lives in it, what the AI does with it,
 // and how to bring it in. Files are read for real; a direct connection is
 // requested (we set it up with the company) and never shown as connected.
-export default function ToolSyncPage({ toolKey, label, position, total }: { toolKey: string; label: string; position: number; total: number }) {
+export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: string; label: string; onRemove?: () => void }) {
   const [item, setItem] = useState<IntegrationItem | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [busy, setBusy] = useState(false);
@@ -73,7 +73,7 @@ export default function ToolSyncPage({ toolKey, label, position, total }: { tool
 
   return (
     <div>
-      <p className="mt-3 text-[12px] font-semibold text-text-faint">Synchronisation · {position} sur {total}</p>
+      <p className="mt-3 text-[12px] font-semibold text-text-faint">Synchronisation</p>
       <div className="mt-6 flex items-center gap-5">
         <div className={`flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-[18px] font-display text-[30px] font-semibold text-white transition-colors ${synced ? "bg-success" : "bg-accent"}`}>
           {synced ? (
@@ -155,6 +155,11 @@ export default function ToolSyncPage({ toolKey, label, position, total }: { tool
               </button>
             )}
           </div>
+          {onRemove && (
+            <button type="button" onClick={onRemove} className="mt-5 text-[12.5px] text-text-faint hover:text-text-soft hover:underline">
+              Je n&rsquo;utilise finalement pas {label}
+            </button>
+          )}
         </>
       )}
     </div>

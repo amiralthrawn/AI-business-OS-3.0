@@ -184,7 +184,7 @@ def test_multiple_choice_answers_feed_the_profile_and_the_ai_watches_everything(
     catalog = client.get("/configuration/catalog", headers=headers).json()
     for group in catalog["groups"]:
         assert [q["key"] for q in group["qcm"]] == ["goals", "problems", "externals"]
-        assert all(7 <= len(q["choices"]) <= 9 for q in group["qcm"])
+        assert all(6 <= len(q["choices"]) <= 9 for q in group["qcm"])
     assert len(catalog["tool_pages"]) == 4
     pages = [c for p in catalog["tool_pages"] for c in p["categories"]]
     assert set(pages) == {c["key"] for c in catalog["categories"]}
@@ -275,5 +275,5 @@ def test_every_question_list_ends_with_a_neutral_answer(client):
     for group in catalog["groups"]:
         by_key = {q["key"]: q["choices"] for q in group["qcm"]}
         assert by_key["goals"][-1].startswith("Je souhaite avant tout automatiser")
-        assert "Je veux automatiser la gestion de mon entreprise" in by_key["problems"]
+        assert not any("automatiser la gestion" in c for c in by_key["problems"])
         assert by_key["externals"][-1].startswith("Je ne sais pas encore")

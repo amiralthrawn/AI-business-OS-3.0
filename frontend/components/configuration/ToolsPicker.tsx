@@ -15,6 +15,8 @@ export default function ToolsPicker({
   onCustomChange,
   categoryKeys,
   showCustom = true,
+  compact = false,
+  onPick,
 }: {
   tools: CatalogTool[];
   categories: CatalogCategory[];
@@ -25,6 +27,10 @@ export default function ToolsPicker({
   // Only these families are shown (one page of the setup).
   categoryKeys?: string[];
   showCustom?: boolean;
+  // One question per family: no family heading, no counter; search only for long lists.
+  compact?: boolean;
+  // Called when a tool is clicked (selected or not): the setup opens its page.
+  onPick?: (key: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
@@ -38,8 +44,14 @@ export default function ToolsPicker({
   }, [tools, categories, query, categoryKeys]);
 
   function toggle(key: string) {
+    if (onPick) {
+      if (!selected.includes(key)) onChange([...selected, key]);
+      onPick(key);
+      return;
+    }
     onChange(selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key]);
   }
+  const totalItems = sections.reduce((n, s) => n + s.items.length, 0);
 
   function addCustom() {
     const name = draft.trim();
@@ -50,22 +62,24 @@ export default function ToolsPicker({
 
   return (
     <div>
-      <input
+      {(!compact || totalItems > 15 || query) && <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Rechercher un outil (ex. Sage, Salesforce, Qonto, Power BI…)"
         aria-label="Rechercher un outil"
         className="w-full rounded-xl border-[1.5px] border-border-strong px-4 py-3 text-[14.5px] outline-none focus:border-accent"
-      />
-      <p className="mt-2 text-[12px] text-text-faint">
-        {selected.length + customTools.length} outil{selected.length + customTools.length > 1 ? "s" : ""} sélectionné{selected.length + customTools.length > 1 ? "s" : ""} au total
-      </p>
+      />}
+      {!compact && (
+        <p className="mt-2 text-[12px] text-text-faint">
+          {selected.length + customTools.length} outil{selected.length + customTools.length > 1 ? "s" : ""} sélectionné{selected.length + customTools.length > 1 ? "s" : ""} au total
+        </p>
+      )}
       <div className="mt-3 space-y-5 rounded-xl border border-border p-3">
         {sections.length === 0 && <p className="px-1 py-2 text-[13px] text-text-faint">Aucun outil ne correspond : ajoutez-le ci-dessous avec son nom.</p>}
         {sections.map(({ category, items }) => (
           <div key={category.key}>
-            <p className="px-1 text-[11px] font-bold uppercase tracking-wide text-text-faint">{category.label}</p>
-            <p className="mb-2 mt-0.5 px-1 text-[12px] text-text-soft">{category.ai_use}</p>
+            {!compact && <p className="px-1 text-[11px] font-bold uppercase tracking-wide text-text-faint">{category.label}</p>}
+            {!compact && <p className="mb-2 mt-0.5 px-1 text-[12px] text-text-soft">{category.ai_use}</p>}
             <div className="flex flex-wrap gap-2">
               {items.map((t) => (
                 <button

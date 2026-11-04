@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
 import Chip from "@/components/ui/Chip";
 import DataImport from "@/components/configuration/DataImport";
@@ -47,9 +47,31 @@ const ROLE_OPTIONS: { role: Role; hint: string }[] = [
   { role: "employee", hint: "Consultation et tâches" },
 ];
 
-// The tools are asked over four pages, each saying why (catalog.tool_pages).
-const TOOL_STEPS = ["Outils:business", "Outils:money", "Outils:operations", "Outils:files"];
-const BASE_STEPS = (sync: string[]) => ["Entreprise", "Activité", ...TOOL_STEPS, ...sync, "Documents", ...(AUTH_REQUIRED ? [] : ["Votre rôle"]), "Récapitulatif"];
+// One question per family of tools ("Quel est votre ERP ?"). Clicking a tool
+// opens its synchronisation page straight away; the next question follows.
+const CATEGORY_QUESTIONS: [string, string][] = [
+  ["erp", "Quel est votre ERP ?"],
+  ["crm", "Quel est votre CRM ?"],
+  ["accounting", "Quel logiciel de comptabilité utilisez-vous ?"],
+  ["invoicing", "Avec quel outil facturez-vous ?"],
+  ["procurement", "Quel outil utilisez-vous pour vos achats ?"],
+  ["ecommerce", "Vendez-vous en ligne ? Sur quelle plateforme ?"],
+  ["bank", "Quelle est votre banque ?"],
+  ["payment", "Quels outils de paiement en ligne utilisez-vous ?"],
+  ["expenses", "Comment gérez-vous vos notes de frais et vos cartes ?"],
+  ["stock", "Quel outil gère votre stock et votre logistique ?"],
+  ["production", "Quel outil suit votre production et votre qualité ?"],
+  ["hr", "Quel outil gère vos RH et votre paie ?"],
+  ["messaging", "Quelle messagerie et quels outils d'équipe utilisez-vous ?"],
+  ["projects", "Quel outil suit vos projets et vos tâches ?"],
+  ["support", "Quel outil gère votre support client ?"],
+  ["marketing", "Quels outils utilisez-vous pour votre site et votre marketing ?"],
+  ["legal", "Quels outils juridiques ou de signature utilisez-vous ?"],
+  ["spreadsheet", "Quels tableurs font tourner votre entreprise ?"],
+  ["bi", "Quel outil de reporting ou de BI utilisez-vous ?"],
+  ["database", "Quelle base de données ou quel cloud utilisez-vous ?"],
+];
+const STEPS = ["Entreprise", "Activité", ...CATEGORY_QUESTIONS.map(([k]) => `Cat:${k}`), "Autres outils", "Documents", ...(AUTH_REQUIRED ? [] : ["Votre rôle"]), "Récapitulatif"];
 
 export default function OnboardingWizard({
   initialCompany,
@@ -79,9 +101,8 @@ export default function OnboardingWizard({
   const [toolKeys, setToolKeys] = useState<string[]>([]);
   const [customTools, setCustomTools] = useState<string[]>([]);
 
-  // One full page per declared tool, after the tool questions.
-  const syncTools = useMemo(() => toolKeys.filter((k) => catalog?.tools.some((t) => t.key === k)), [toolKeys, catalog]);
-  const STEPS = useMemo(() => BASE_STEPS(syncTools.map((k) => `Sync:${k}`)), [syncTools]);
+  // Set when a tool was just clicked: its synchronisation page replaces the question.
+  const [syncing, setSyncing] = useState<string | null>(null);
 
   useEffect(() => {
     getConfigCatalog().then(setCatalog).catch((err) => setCatalogError(err instanceof Error ? err.message : "Catalogue indisponible."));
@@ -128,7 +149,7 @@ export default function OnboardingWizard({
   async function next() {
     setError(null);
     // The tools are saved before the data step so every upload attaches to a declared tool.
-    if (STEPS[step] === "Outils:files") {
+    if (STEPS[step] === "Autres outils") {
       setSaving(true);
       try {
         await persist();
@@ -140,7 +161,26 @@ export default function OnboardingWizard({
       }
       setSaving(false);
     }
+    setSyncing(null);
     setStep((s) => s + 1);
+  }
+
+  async function pickTool(key: string) {
+    setError(null);
+    try {
+      // The tool must be declared before a file is attached to it.
+      await saveConfiguration({ ...payload(), tools: toolKeys.includes(key) ? toolKeys : [...toolKeys, key] });
+      setSyncing(key);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Une erreur est survenue.");
+    }
+  }
+
+  async function removeTool(key: string) {
+    const rest = toolKeys.filter((k) => k !== key);
+    setToolKeys(rest);
+    setSyncing(null);
+    await saveConfiguration({ ...payload(), tools: rest }).catch(() => undefined);
   }
 
   function skipToProduct() {
@@ -190,7 +230,7 @@ export default function OnboardingWizard({
         </div>
       </div>
 
-      <div key={step} className={`animate-reveal mt-12 w-full rounded-[20px] border border-border bg-surface p-10 shadow-card md:p-14 ${STEPS[step]?.startsWith("Sync:") ? "max-w-[760px]" : "max-w-[640px]"}`}>
+      <div key={step} className={`animate-reveal mt-12 w-full rounded-[20px] border border-border bg-surface p-10 shadow-card md:p-14 ${STEPS[step]?.startsWith("Cat:") && syncing ? "max-w-[760px]" : "max-w-[640px]"}`}>
         <p className="text-[12.5px] font-semibold uppercase tracking-wide text-accent-strong">Configuration initiale</p>
 
         {STEPS[step] === "Entreprise" && (
@@ -273,33 +313,41 @@ export default function OnboardingWizard({
           </>
         )}
 
-        {STEPS[step].startsWith("Outils:") && (() => {
-          const page = catalog?.tool_pages.find((p) => p.key === STEPS[step].split(":")[1]);
-          const pageNumber = TOOL_STEPS.indexOf(STEPS[step]) + 1;
+        {STEPS[step].startsWith("Cat:") && (() => {
+          const catKey = STEPS[step].slice(4);
+          const question = CATEGORY_QUESTIONS.find(([k]) => k === catKey)?.[1] ?? "Quel outil utilisez-vous ?";
+          const category = catalog?.categories.find((c) => c.key === catKey);
+          const index = CATEGORY_QUESTIONS.findIndex(([k]) => k === catKey) + 1;
+          if (syncing) {
+            return (
+              <ToolSyncPage
+                key={syncing}
+                toolKey={syncing}
+                label={catalog?.tools.find((t) => t.key === syncing)?.label ?? syncing}
+                onRemove={() => void removeTool(syncing)}
+              />
+            );
+          }
           return (
             <>
-              <p className="mt-3 text-[12px] font-semibold text-text-faint">
-                Vos outils · {pageNumber} sur {TOOL_STEPS.length}
-              </p>
-              <h1 className="mt-2 font-display text-[30px] italic leading-tight md:text-[34px]">{page?.title ?? "Vos outils"}</h1>
-              {page && (
-                <div className="mt-4 rounded-2xl bg-surface-sunken p-4">
-                  <p className="text-[12px] font-bold uppercase tracking-wide text-accent-strong">Pourquoi nous vous le demandons</p>
-                  <p className="mt-1.5 text-[13.5px] text-text-soft">{page.why}</p>
-                </div>
-              )}
-              <p className="mt-4 text-[13px] text-text-faint">Cochez ce que vous utilisez. Rien à cocher ? Passez simplement à la suite.</p>
+              <p className="mt-3 text-[12px] font-semibold text-text-faint">Vos outils · {index} sur {CATEGORY_QUESTIONS.length}</p>
+              <h1 className="mt-2 font-display text-[32px] italic leading-tight md:text-[36px]">{question}</h1>
+              {category && <p className="mt-3.5 max-w-lg text-[14.5px] text-text-soft">{category.ai_use}</p>}
+              <p className="mt-4 text-[13px] text-text-faint">Cliquez sur votre outil pour le synchroniser. Vous n&rsquo;en utilisez pas ? Passez simplement à la question suivante.</p>
+              {error && <p className="mt-3 text-[13px] text-danger">{error}</p>}
               <div className="mt-5">
-                {catalog && page ? (
+                {catalog ? (
                   <ToolsPicker
                     tools={catalog.tools}
                     categories={catalog.categories}
-                    categoryKeys={page.categories}
+                    categoryKeys={[catKey]}
                     selected={toolKeys}
                     customTools={customTools}
                     onChange={setToolKeys}
                     onCustomChange={setCustomTools}
-                    showCustom={STEPS[step] === "Outils:files"}
+                    showCustom={false}
+                    compact
+                    onPick={(k) => void pickTool(k)}
                   />
                 ) : (
                   <p className="text-[13px] text-text-faint">{catalogError ?? "Chargement…"}</p>
@@ -309,18 +357,21 @@ export default function OnboardingWizard({
           );
         })()}
 
-        {STEPS[step].startsWith("Sync:") && (() => {
-          const key = STEPS[step].slice(5);
-          return (
-            <ToolSyncPage
-              key={key}
-              toolKey={key}
-              label={catalog?.tools.find((t) => t.key === key)?.label ?? key}
-              position={syncTools.indexOf(key) + 1}
-              total={syncTools.length}
-            />
-          );
-        })()}
+        {STEPS[step] === "Autres outils" && (
+          <>
+            <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
+              Un autre outil
+              <br />
+              important ?
+            </h1>
+            <p className="mt-3.5 max-w-lg text-[15px] text-text-soft">Un logiciel métier ou un outil maison qui n&rsquo;est apparu dans aucune liste : donnez son nom, l&rsquo;IA saura qu&rsquo;il existe. Sinon, passez à la suite.</p>
+            <div className="mt-6">
+              {catalog && (
+                <ToolsPicker tools={catalog.tools} categories={catalog.categories} categoryKeys={[]} selected={toolKeys} customTools={customTools} onChange={setToolKeys} onCustomChange={setCustomTools} showCustom compact />
+              )}
+            </div>
+          </>
+        )}
 
         {STEPS[step] === "Documents" && (
           <>
@@ -409,15 +460,21 @@ export default function OnboardingWizard({
 
         <div className="mt-11 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            {step > 0 && (
-              <button type="button" onClick={() => setStep((s) => s - 1)} className="flex items-center gap-1.5 text-[13.5px] font-medium text-text-soft hover:text-text">
+            {(step > 0 || syncing) && (
+              <button type="button" onClick={() => (syncing ? setSyncing(null) : setStep((s) => s - 1))} className="flex items-center gap-1.5 text-[13.5px] font-medium text-text-soft hover:text-text">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
                 Retour
               </button>
             )}
-            <button type="button" onClick={skipToProduct} className="text-[13.5px] font-medium text-text-soft hover:text-text">
-              Terminer plus tard
-            </button>
+            {syncing ? (
+              <button type="button" onClick={() => void next()} className="text-[13.5px] font-medium text-text-soft hover:text-text">
+                Ignorer cette étape
+              </button>
+            ) : (
+              <button type="button" onClick={skipToProduct} className="text-[13.5px] font-medium text-text-soft hover:text-text">
+                Terminer plus tard
+              </button>
+            )}
           </div>
 
           {step < STEPS.length - 1 ? (
