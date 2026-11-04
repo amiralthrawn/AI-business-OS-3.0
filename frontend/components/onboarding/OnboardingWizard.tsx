@@ -1,12 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Button from "@/components/ui/Button";
 import Chip from "@/components/ui/Chip";
 import DataImport from "@/components/configuration/DataImport";
 import QcmQuestions from "@/components/configuration/QcmQuestions";
 import SectorPicker from "@/components/configuration/SectorPicker";
+import ToolSyncPage from "@/components/configuration/ToolSyncPage";
 import ToolsPicker from "@/components/configuration/ToolsPicker";
 import { AUTH_REQUIRED, createUser, getConfigCatalog, getConfiguration, saveConfiguration, setSelectedProfile, updateCompany } from "@/lib/api";
 import { ROLE_LABEL } from "@/lib/objects";
@@ -48,7 +49,7 @@ const ROLE_OPTIONS: { role: Role; hint: string }[] = [
 
 // The tools are asked over four pages, each saying why (catalog.tool_pages).
 const TOOL_STEPS = ["Outils:business", "Outils:money", "Outils:operations", "Outils:files"];
-const STEPS = ["Entreprise", "Activité", ...TOOL_STEPS, "Vos données", ...(AUTH_REQUIRED ? [] : ["Votre rôle"]), "Récapitulatif"];
+const BASE_STEPS = (sync: string[]) => ["Entreprise", "Activité", ...TOOL_STEPS, ...sync, "Documents", ...(AUTH_REQUIRED ? [] : ["Votre rôle"]), "Récapitulatif"];
 
 export default function OnboardingWizard({
   initialCompany,
@@ -77,6 +78,10 @@ export default function OnboardingWizard({
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [toolKeys, setToolKeys] = useState<string[]>([]);
   const [customTools, setCustomTools] = useState<string[]>([]);
+
+  // One full page per declared tool, after the tool questions.
+  const syncTools = useMemo(() => toolKeys.filter((k) => catalog?.tools.some((t) => t.key === k)), [toolKeys, catalog]);
+  const STEPS = useMemo(() => BASE_STEPS(syncTools.map((k) => `Sync:${k}`)), [syncTools]);
 
   useEffect(() => {
     getConfigCatalog().then(setCatalog).catch((err) => setCatalogError(err instanceof Error ? err.message : "Catalogue indisponible."));
@@ -170,16 +175,22 @@ export default function OnboardingWizard({
           <span className="font-display text-[15px] font-semibold">AI Business OS</span>
         </div>
         <div className="flex items-center gap-2">
-          {STEPS.map((_, i) => (
-            <span key={i} className={`h-[7px] rounded-full transition-all ${i === step ? "w-[22px] bg-accent" : i < step ? "w-[7px] bg-accent-strong" : "w-[7px] bg-border-strong"}`} />
-          ))}
+          {STEPS.length <= 12 ? (
+            STEPS.map((_, i) => (
+              <span key={i} className={`h-[7px] rounded-full transition-all ${i === step ? "w-[22px] bg-accent" : i < step ? "w-[7px] bg-accent-strong" : "w-[7px] bg-border-strong"}`} />
+            ))
+          ) : (
+            <span className="h-[7px] w-40 overflow-hidden rounded-full bg-border-strong">
+              <span className="block h-full rounded-full bg-accent transition-all" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
+            </span>
+          )}
           <span className="ml-1.5 font-mono text-[11.5px] text-text-faint">
             Étape {step + 1} sur {STEPS.length}
           </span>
         </div>
       </div>
 
-      <div key={step} className="animate-reveal mt-12 w-full max-w-[640px] rounded-[20px] border border-border bg-surface p-10 shadow-card md:p-14">
+      <div key={step} className={`animate-reveal mt-12 w-full rounded-[20px] border border-border bg-surface p-10 shadow-card md:p-14 ${STEPS[step]?.startsWith("Sync:") ? "max-w-[760px]" : "max-w-[640px]"}`}>
         <p className="text-[12.5px] font-semibold uppercase tracking-wide text-accent-strong">Configuration initiale</p>
 
         {STEPS[step] === "Entreprise" && (
@@ -298,18 +309,31 @@ export default function OnboardingWizard({
           );
         })()}
 
-        {STEPS[step] === "Vos données" && (
+        {STEPS[step].startsWith("Sync:") && (() => {
+          const key = STEPS[step].slice(5);
+          return (
+            <ToolSyncPage
+              key={key}
+              toolKey={key}
+              label={catalog?.tools.find((t) => t.key === key)?.label ?? key}
+              position={syncTools.indexOf(key) + 1}
+              total={syncTools.length}
+            />
+          );
+        })()}
+
+        {STEPS[step] === "Documents" && (
           <>
             <h1 className="mt-3 font-display text-[30px] italic leading-tight md:text-[34px]">
-              Faisons entrer
+              Vos autres
               <br />
-              vos données
+              documents
             </h1>
             <p className="mt-3.5 max-w-lg text-[15px] text-text-soft">
-              Pour chaque outil, voici comment l&rsquo;exporter et ce que l&rsquo;IA en fait. Les fichiers déposés sont lus pour de vrai et alimentent votre espace. Vous pouvez aussi y revenir plus tard.
+              Des fichiers qui ne viennent d&rsquo;aucun de vos outils : un suivi Excel tenu à la main, une liste de prix, un export de comptabilité. Ils sont lus pour de vrai et alimentent votre espace. Vous pouvez aussi y revenir plus tard.
             </p>
             <div className="mt-7">
-              <DataImport refreshKey={importRefresh} />
+              <DataImport refreshKey={importRefresh} documentsOnly />
             </div>
           </>
         )}

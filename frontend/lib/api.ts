@@ -308,10 +308,11 @@ export async function saveConfiguration(payload: ConfigurationUpdate): Promise<C
   return res.json();
 }
 
-export async function importAuto(file: File): Promise<ImportResultRead> {
+export async function importAuto(file: File, tool?: string): Promise<ImportResultRead> {
   const body = new FormData();
   body.append("file", file);
-  const res = await apiFetch(`${API_URL}/configuration/imports/auto`, { method: "POST", body, cache: "no-store" });
+  const query = tool ? `?tool=${encodeURIComponent(tool)}` : "";
+  const res = await apiFetch(`${API_URL}/configuration/imports/auto${query}`, { method: "POST", body, cache: "no-store" });
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
     throw new Error(typeof detail?.detail === "string" ? detail.detail : `Import impossible (${res.status})`);

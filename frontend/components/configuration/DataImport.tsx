@@ -20,7 +20,7 @@ type Outcome = { file: string; result?: ImportResultRead; error?: string };
 // One place to drop files, whatever the tool: the AI recognises what each
 // file contains. Files are read for real and land in the company's own
 // customers, suppliers, products and finances. Nothing is simulated.
-export default function DataImport({ refreshKey = 0 }: { refreshKey?: number }) {
+export default function DataImport({ refreshKey = 0, documentsOnly = false }: { refreshKey?: number; documentsOnly?: boolean }) {
   const [plan, setPlan] = useState<IntegrationPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -86,7 +86,7 @@ export default function DataImport({ refreshKey = 0 }: { refreshKey?: number }) 
         }}
         className={`rounded-2xl border-2 border-dashed px-6 py-9 text-center transition-colors ${over ? "border-accent bg-accent-soft" : "border-border-strong bg-surface-sunken"}`}
       >
-        <p className="text-[15px] font-semibold text-text">Déposez ici vos fichiers</p>
+        <p className="text-[15px] font-semibold text-text">{documentsOnly ? "Déposez ici vos autres documents" : "Déposez ici vos fichiers"}</p>
         <p className="mx-auto mt-1.5 max-w-md text-[12.5px] text-text-soft">
           Exports de vos outils, tableurs Excel, fichiers CSV, comptabilité (FEC). Plusieurs à la fois, dans n&rsquo;importe quel ordre : l&rsquo;IA reconnaît tout seule s&rsquo;il s&rsquo;agit de clients, de fournisseurs, de produits ou de comptabilité.
         </p>
@@ -139,7 +139,7 @@ export default function DataImport({ refreshKey = 0 }: { refreshKey?: number }) 
         </p>
       )}
 
-      {plan.tools.length > 0 && (
+      {!documentsOnly && plan.tools.length > 0 && (
         <div>
           <p className="mb-3 text-[13.5px] font-semibold text-text">Vos outils : comment récupérer leurs données</p>
           <div className="space-y-2.5">
@@ -173,7 +173,7 @@ export default function DataImport({ refreshKey = 0 }: { refreshKey?: number }) 
           </div>
         </div>
       )}
-      {plan.custom_tools.length > 0 && <p className="text-[12.5px] text-text-soft">Outils ajoutés par vous : {plan.custom_tools.join(", ")}. Exportez leurs données en CSV ou Excel et déposez-les ci-dessus.</p>}
+      {!documentsOnly && plan.custom_tools.length > 0 && <p className="text-[12.5px] text-text-soft">Outils ajoutés par vous : {plan.custom_tools.join(", ")}. Exportez leurs données en CSV ou Excel et déposez-les ci-dessus.</p>}
     </div>
   );
 }
