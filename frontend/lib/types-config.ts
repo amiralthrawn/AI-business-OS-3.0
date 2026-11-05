@@ -104,6 +104,7 @@ export type ToolGuide = {
   sources: string[];
   caveats: string;
   generic: string;
+  reason?: string;
 };
 export type GuideAnswer = { answer: string; sources: string[]; grounded: boolean };
 export type NextStep = { action: "upload" | "request_connection" | "reminder"; kind?: ImportKind; text: string };

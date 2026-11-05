@@ -108,7 +108,7 @@ def get_guide(session: Session, company_id: uuid.UUID, tool_key: str, *, refresh
 
     base = {"tool": tool_key, "label": label, "generic": _generic(tool_key), "researched_at": datetime.now(timezone.utc).isoformat()}
     if not perplexity.configured():
-        return {**base, "status": "unavailable", "steps": [], "sources": [], "caveats": ""}
+        return {**base, "status": "unavailable", "reason": "not_configured", "steps": [], "sources": [], "caveats": ""}
 
     wanted = ", ".join(KIND_LABEL[k] for k in category.import_kinds) or "ses relevés"
     question = (
@@ -117,8 +117,8 @@ def get_guide(session: Session, company_id: uuid.UUID, tool_key: str, *, refresh
     )
     try:
         text, sources = perplexity.ask(_RESEARCH_SYSTEM, question)
-    except perplexity.PerplexityError:
-        return {**base, "status": "unavailable", "steps": [], "sources": [], "caveats": ""}
+    except perplexity.PerplexityError as exc:
+        return {**base, "status": "unavailable", "reason": str(exc)[:200], "steps": [], "sources": [], "caveats": ""}
     parsed = _parse_json(text) or {}
     steps = _clean_steps(parsed.get("steps"))
     found = bool(parsed.get("found")) and bool(steps) and bool(sources)
