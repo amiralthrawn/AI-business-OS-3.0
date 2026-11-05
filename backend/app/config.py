@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     perplexity_model: str = "sonar"
     # Same role, through Google Gemini with Google Search grounding. When this
     # key is set it is used first (app.agents.perplexity.ask).
+    # OpenRouter gives one key for many models; perplexity/sonar searches the
+    # web and returns its sources. Used first when set.
+    openrouter_api_key: str | None = None
+    openrouter_model: str = "perplexity/sonar"
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.5-flash-lite"
     # Runs the agents around the clock (app.agents.scheduler).

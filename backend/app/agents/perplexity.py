@@ -24,8 +24,15 @@ def _gemini_on() -> bool:
     return bool((get_settings().gemini_api_key or "").strip())
 
 
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+def _openrouter_on() -> bool:
+    return bool((get_settings().openrouter_api_key or "").strip())
+
+
 def configured() -> bool:
-    return _gemini_on() or bool((get_settings().perplexity_api_key or "").strip())
+    return _openrouter_on() or _gemini_on() or bool((get_settings().perplexity_api_key or "").strip())
 
 
 def _walk(node: object, texts: list[str], urls: list[str]) -> None:
@@ -42,6 +49,33 @@ def _walk(node: object, texts: list[str], urls: list[str]) -> None:
     elif isinstance(node, list):
         for value in node:
             _walk(value, texts, urls)
+
+
+def _ask_openrouter(system: str, user: str, timeout: float) -> tuple[str, list[str]]:
+    settings = get_settings()
+    body = {"model": settings.openrouter_model, "temperature": 0.1, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    try:
+        res = httpx.post(OPENROUTER_URL, headers={"Authorization": f"Bearer {settings.openrouter_api_key.strip()}", "Content-Type": "application/json"}, json=body, timeout=timeout)
+    except httpx.HTTPError as exc:
+        raise PerplexityError(f"OpenRouter unreachable: {exc}") from exc
+    if res.status_code != 200:
+        raise PerplexityError(f"OpenRouter answered {res.status_code}: {res.text[:900]}")
+    try:
+        data = res.json()
+        message = data["choices"][0]["message"]
+        text = message.get("content") or ""
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise PerplexityError("Unexpected OpenRouter answer") from exc
+    urls: list[str] = [c for c in (data.get("citations") or message.get("citations") or []) if isinstance(c, str)]
+    for ann in message.get("annotations") or []:
+        if isinstance(ann, dict):
+            cite = ann.get("url_citation") or ann
+            if isinstance(cite, dict) and isinstance(cite.get("url"), str):
+                urls.append(cite["url"])
+    text = re.sub(r"\s*\[\d+\]", "", text).strip()
+    if not text:
+        raise PerplexityError("OpenRouter returned no answer")
+    return text, list(dict.fromkeys(urls))
 
 
 def _ask_gemini(system: str, user: str, timeout: float) -> tuple[str, list[str]]:
@@ -96,6 +130,8 @@ def ask(system: str, user: str, *, timeout: float = 90.0) -> tuple[str, list[str
     settings = get_settings()
     if not configured():
         raise PerplexityError("No search key is set (GEMINI_API_KEY or PERPLEXITY_API_KEY)")
+    if _openrouter_on():
+        return _ask_openrouter(system, user, timeout)
     if _gemini_on():
         return _ask_gemini(system, user, timeout)
     body: dict = {"instructions": system, "input": user, "tools": [{"type": "web_search"}]}

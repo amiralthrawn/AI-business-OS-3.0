@@ -158,3 +158,22 @@ def test_gemini_is_used_first_and_its_citations_are_parsed(monkeypatch):
     assert (text, sources) == ("Voici.", ["https://doc.example/a"])
     assert "generativelanguage" in seen["url"] and seen["headers"]["x-goog-api-key"] == "g"
     assert seen["body"]["tools"] == [{"type": "google_search"}]
+
+
+def test_openrouter_is_used_first_with_sonar_citations(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(get_settings(), "openrouter_api_key", "o")
+    monkeypatch.setattr(get_settings(), "gemini_api_key", "g")
+    seen = {}
+
+    def fake_post(url, headers, json, timeout):
+        seen.update(url=url, body=json)
+        payload = {"citations": ["https://a.example/1"], "choices": [{"message": {"content": "Oui[1].", "annotations": [
+            {"type": "url_citation", "url_citation": {"url": "https://b.example/2", "title": "b"}}]}}]}
+        return httpx.Response(200, json=payload)
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    text, sources = perplexity.ask("sys", "q")
+    assert text == "Oui." and sources == ["https://a.example/1", "https://b.example/2"]
+    assert "openrouter.ai" in seen["url"] and seen["body"]["model"] == "perplexity/sonar"
