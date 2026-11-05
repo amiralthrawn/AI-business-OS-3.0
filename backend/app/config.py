@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # the Veilleur says it is not configured and finds nothing (never invents).
     perplexity_api_key: str | None = None
     perplexity_model: str = "sonar"
+    # Same role, through Google Gemini with Google Search grounding. When this
+    # key is set it is used first (app.agents.perplexity.ask).
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-3.5-flash-lite"
     # Runs the agents around the clock (app.agents.scheduler).
     agents_scheduler: bool = True
     # V3 authentication (app.auth). "required": every API call needs a

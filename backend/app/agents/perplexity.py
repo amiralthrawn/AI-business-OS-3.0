@@ -1,5 +1,8 @@
-"""Perplexity (Sonar): the best tool for collecting live information from the
-web with its sources. The Veilleur's only door to the outside world."""
+"""The agents' only door to the live web, with sources.
+
+Two providers behind one `ask()`: Google Gemini with Google Search grounding
+(used first when GEMINI_API_KEY is set) or Perplexity's Agent API. The module
+keeps its historical name so the agents and the tests did not have to change."""
 
 import re
 
@@ -14,8 +17,60 @@ class PerplexityError(RuntimeError):
     pass
 
 
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
+
+
+def _gemini_on() -> bool:
+    return bool((get_settings().gemini_api_key or "").strip())
+
+
 def configured() -> bool:
-    return bool((get_settings().perplexity_api_key or "").strip())
+    return _gemini_on() or bool((get_settings().perplexity_api_key or "").strip())
+
+
+def _walk(node: object, texts: list[str], urls: list[str]) -> None:
+    """Collects answer text and url citations from an Interactions response,
+    whatever its exact nesting (steps, content, annotations)."""
+
+    if isinstance(node, dict):
+        if node.get("type") == "text" and isinstance(node.get("text"), str):
+            texts.append(node["text"])
+        if node.get("type") == "url_citation" and isinstance(node.get("url"), str):
+            urls.append(node["url"])
+        for value in node.values():
+            _walk(value, texts, urls)
+    elif isinstance(node, list):
+        for value in node:
+            _walk(value, texts, urls)
+
+
+def _ask_gemini(system: str, user: str, timeout: float) -> tuple[str, list[str]]:
+    settings = get_settings()
+    body = {
+        "model": settings.gemini_model,
+        "input": f"{system}\n\n{user}",
+        "tools": [{"type": "google_search"}],
+    }
+    try:
+        res = httpx.post(GEMINI_URL, headers={"x-goog-api-key": settings.gemini_api_key.strip(), "Content-Type": "application/json"}, json=body, timeout=timeout)
+    except httpx.HTTPError as exc:
+        raise PerplexityError(f"Gemini unreachable: {exc}") from exc
+    if res.status_code != 200:
+        raise PerplexityError(f"Gemini answered {res.status_code}: {res.text[:900]}")
+    try:
+        data = res.json()
+    except ValueError as exc:
+        raise PerplexityError("Unexpected Gemini answer") from exc
+    # keep only the model's output, not the search-call/result steps
+    steps = data.get("steps") if isinstance(data, dict) else None
+    outputs = [st for st in steps if isinstance(st, dict) and st.get("type") == "model_output"] if isinstance(steps, list) else [data]
+    texts: list[str] = []
+    urls: list[str] = []
+    _walk(outputs, texts, urls)
+    text = re.sub(r"\s*\[\d+\]", "", "".join(texts)).strip()
+    if not text:
+        raise PerplexityError("Gemini returned no answer")
+    return text, list(dict.fromkeys(urls))
 
 
 def _post(body: dict, timeout: float) -> httpx.Response:
@@ -40,7 +95,9 @@ def ask(system: str, user: str, *, timeout: float = 90.0) -> tuple[str, list[str
 
     settings = get_settings()
     if not configured():
-        raise PerplexityError("PERPLEXITY_API_KEY is not set")
+        raise PerplexityError("No search key is set (GEMINI_API_KEY or PERPLEXITY_API_KEY)")
+    if _gemini_on():
+        return _ask_gemini(system, user, timeout)
     body: dict = {"instructions": system, "input": user, "tools": [{"type": "web_search"}]}
     model = (settings.perplexity_model or "").strip()
     if "/" in model:

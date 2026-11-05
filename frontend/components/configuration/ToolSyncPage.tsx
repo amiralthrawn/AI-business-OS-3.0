@@ -164,7 +164,7 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
                 </p>
                 {guide?.status === "unavailable" && guide.reason && (
                   <p className="mt-1.5 text-[12.5px] text-text-faint">
-                    Raison technique : {guide.reason === "not_configured" ? "la clé PERPLEXITY_API_KEY n'est pas lue par le serveur (API)." : guide.reason}
+                    Raison technique : {guide.reason === "not_configured" ? "aucune clé de recherche (GEMINI_API_KEY) n'est lue par le serveur (API)." : guide.reason}
                   </p>
                 )}
                 <p className="mt-1.5">Instructions générales, non vérifiées pour {label} : {item.export_help}</p>

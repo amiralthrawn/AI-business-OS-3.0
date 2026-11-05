@@ -33,6 +33,8 @@ services:
         sync: false  # the web app address, e.g. https://aibos3-web.onrender.com
       - key: FRONTEND_URL
         sync: false  # same address, used in invitation links
+      - key: GEMINI_API_KEY
+        sync: false
       - key: PERPLEXITY_API_KEY
         sync: false
 

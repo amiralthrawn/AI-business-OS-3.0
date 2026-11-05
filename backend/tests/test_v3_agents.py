@@ -135,3 +135,26 @@ def test_perplexity_agent_api_response_is_parsed(monkeypatch):
     text, sources = perplexity.ask("sys", "question")
     assert text == "Réponse utile." and sources == ["https://a.example/x", "https://b.example/y"]
     assert seen["url"].endswith("/v1/agent") and seen["body"]["instructions"] == "sys" and seen["body"]["effort"] == "fast"
+
+
+def test_gemini_is_used_first_and_its_citations_are_parsed(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(get_settings(), "gemini_api_key", "g")
+    monkeypatch.setattr(get_settings(), "perplexity_api_key", "p")
+    seen = {}
+
+    def fake_post(url, headers, json, timeout):
+        seen.update(url=url, headers=headers, body=json)
+        payload = {"steps": [
+            {"type": "google_search_call", "arguments": {"queries": ["x"]}},
+            {"type": "model_output", "content": [{"type": "text", "text": "Voici.", "annotations": [
+                {"type": "url_citation", "url": "https://doc.example/a", "title": "doc.example"}]}]},
+        ]}
+        return httpx.Response(200, json=payload)
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    text, sources = perplexity.ask("sys", "q")
+    assert (text, sources) == ("Voici.", ["https://doc.example/a"])
+    assert "generativelanguage" in seen["url"] and seen["headers"]["x-goog-api-key"] == "g"
+    assert seen["body"]["tools"] == [{"type": "google_search"}]

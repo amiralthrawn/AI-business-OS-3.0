@@ -5,6 +5,7 @@ import os
 os.environ.setdefault("AUTH_MODE", "legacy")
 os.environ.setdefault("AGENTS_SCHEDULER", "false")
 os.environ.setdefault("PERPLEXITY_API_KEY", "")
+os.environ.setdefault("GEMINI_API_KEY", "")
 os.environ.setdefault("AUTH_SECRET_KEY", "test-secret-key-not-for-production-0123456789")
 
 import pytest
