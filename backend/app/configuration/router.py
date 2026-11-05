@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.access.deps import CurrentUser, require
 from app.access import policy as access
-from app.configuration import imports, sectors, service, tools
+from app.configuration import guide, imports, sectors, service, tools
 from app.core.entities import Company
 from app.core.i18n import tx
 from app.core.events.bus import EventBus
@@ -124,6 +124,41 @@ def request_tool_connection(tool_key: str, db: Session = Depends(get_db), _user:
         return service.request_connection(db, company.id, tool_key)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=tx("Cet outil n'est pas dans votre liste.", "This tool is not in your list.")) from exc
+
+
+class GuideQuestion(BaseModel):
+    question: str = Field(min_length=2, max_length=600)
+
+
+def _guide_call(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=tx("Cet outil n'est pas dans votre liste.", "This tool is not in your list.")) from exc
+
+
+@router.get("/tools/{tool_key}/guide")
+def get_tool_guide(tool_key: str, refresh: bool = False, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    company = _company(db)
+    return _guide_call(guide.get_guide, db, company.id, tool_key, refresh=refresh)
+
+
+@router.post("/tools/{tool_key}/guide/ask")
+def ask_tool_guide(tool_key: str, payload: GuideQuestion, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    company = _company(db)
+    return _guide_call(guide.ask, db, company.id, tool_key, payload.question)
+
+
+@router.get("/tools/{tool_key}/next-steps")
+def get_tool_next_steps(tool_key: str, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    company = _company(db)
+    return _guide_call(guide.next_steps, service.get_configuration(db, company.id), tool_key)
+
+
+@router.post("/tools/{tool_key}/reminder", status_code=201)
+def add_tool_reminder(tool_key: str, db: Session = Depends(get_db), user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    company = _company(db)
+    return _guide_call(guide.add_reminder, db, company.id, tool_key, user.profile.id if user.profile else None)
 
 
 @router.post("/imports/{kind}")

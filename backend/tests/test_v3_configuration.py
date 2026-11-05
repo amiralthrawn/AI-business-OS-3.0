@@ -277,3 +277,66 @@ def test_every_question_list_ends_with_a_neutral_answer(client):
         assert by_key["goals"][-1].startswith("Je souhaite avant tout automatiser")
         assert not any("automatiser la gestion" in c for c in by_key["problems"])
         assert by_key["externals"][-1].startswith("Je ne sais pas encore")
+
+
+# ---------------------------------------------------------------- connection guide
+
+
+def _with_tools(client, headers, keys):
+    res = client.put("/configuration", headers=headers, json={"sector_key": "electronics_trading", "tools": keys})
+    assert res.status_code == 200, res.text
+
+
+def test_guide_without_search_key_is_unavailable_and_generic(client, monkeypatch):
+    from app.agents import perplexity
+
+    monkeypatch.setattr(get_settings(), "perplexity_api_key", None)
+    headers = _director(client)
+    _with_tools(client, headers, ["pennylane"])
+    guide = client.get("/configuration/tools/pennylane/guide", headers=headers).json()
+    assert guide["status"] == "unavailable" and guide["steps"] == [] and guide["generic"]
+    assert not perplexity.configured()
+
+
+def test_guide_shows_steps_only_when_sources_are_found(client, monkeypatch):
+    from app.agents import perplexity
+
+    monkeypatch.setattr(get_settings(), "perplexity_api_key", "k")
+    answer = '{"found": true, "steps": [{"title": "Ouvrir", "detail": "Allez dans Exports."}], "caveats": ""}'
+    monkeypatch.setattr(perplexity, "ask", lambda system, user, **kw: (answer, ["https://help.example.org/export"]))
+    headers = _director(client)
+    _with_tools(client, headers, ["pennylane", "qonto"])
+    sourced = client.get("/configuration/tools/pennylane/guide", headers=headers).json()
+    assert sourced["status"] == "sourced" and sourced["sources"] == ["https://help.example.org/export"] and len(sourced["steps"]) == 1
+
+    # same steps but no source: the agent must not present them
+    monkeypatch.setattr(perplexity, "ask", lambda system, user, **kw: (answer, []))
+    unsourced = client.get("/configuration/tools/qonto/guide", headers=headers).json()
+    assert unsourced["status"] == "no_sources" and unsourced["steps"] == []
+
+
+def test_guide_question_without_sources_does_not_guess(client, monkeypatch):
+    from app.agents import perplexity
+
+    monkeypatch.setattr(get_settings(), "perplexity_api_key", "k")
+    monkeypatch.setattr(perplexity, "ask", lambda system, user, **kw: ("Cliquez sur le bouton magique.", []))
+    headers = _director(client)
+    _with_tools(client, headers, ["pennylane"])
+    res = client.post("/configuration/tools/pennylane/guide/ask", headers=headers, json={"question": "Où est le bouton ?"}).json()
+    assert res["grounded"] is False and "magique" not in res["answer"]
+
+
+def test_next_steps_and_reminder_are_real(client, monkeypatch):
+    headers = _director(client)
+    _with_tools(client, headers, ["pennylane"])
+    first = client.get("/configuration/tools/pennylane/next-steps", headers=headers).json()
+    assert first["imported_kinds"] == [] and not any(s["action"] == "reminder" for s in first["suggestions"])
+    csv = "Nom;Email\nAcme;a@acme.fr\n".encode()
+    up = client.post("/configuration/imports/customers?tool=pennylane", headers=headers, files={"file": ("clients.csv", csv, "text/csv")})
+    assert up.status_code == 200, up.text
+    after = client.get("/configuration/tools/pennylane/next-steps", headers=headers).json()
+    assert "customers" in after["imported_kinds"]
+    actions = {s["action"] for s in after["suggestions"]}
+    assert {"upload", "request_connection", "reminder"} <= actions
+    assert client.post("/configuration/tools/pennylane/reminder", headers=headers).status_code == 201
+    assert client.get("/configuration/tools/nope/next-steps", headers=headers).status_code == 404

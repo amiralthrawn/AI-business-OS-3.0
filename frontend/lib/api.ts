@@ -634,3 +634,17 @@ export async function agentsCall<T = unknown>(path: string, method = "POST", bod
   }
   return res.json();
 }
+
+async function configJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await apiFetch(`${API_URL}/configuration/${path}`, { cache: "no-store", ...init });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(typeof detail?.detail === "string" ? detail.detail : `Requête impossible (${res.status})`);
+  }
+  return (await res.json()) as T;
+}
+export const getToolGuide = (tool: string, refresh = false) => configJson<import("./types-config").ToolGuide>(`tools/${encodeURIComponent(tool)}/guide${refresh ? "?refresh=true" : ""}`);
+export const askToolGuide = (tool: string, question: string) =>
+  configJson<import("./types-config").GuideAnswer>(`tools/${encodeURIComponent(tool)}/guide/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) });
+export const getToolNextSteps = (tool: string) => configJson<import("./types-config").NextSteps>(`tools/${encodeURIComponent(tool)}/next-steps`);
+export const addToolReminder = (tool: string) => configJson<{ id: string; starts_at: string }>(`tools/${encodeURIComponent(tool)}/reminder`, { method: "POST" });

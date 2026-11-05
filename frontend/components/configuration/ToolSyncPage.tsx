@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getIntegrationPlan, importAuto, requestToolConnection } from "@/lib/api";
-import type { ImportKind, ImportResultRead, IntegrationItem } from "@/lib/types-config";
+import { addToolReminder, askToolGuide, getIntegrationPlan, getToolGuide, getToolNextSteps, importAuto, requestToolConnection } from "@/lib/api";
+import type { GuideAnswer, ImportKind, ImportResultRead, IntegrationItem, NextSteps, ToolGuide } from "@/lib/types-config";
 
 const KIND_LABEL: Record<ImportKind, string> = {
   fec: "écritures comptables",
@@ -27,6 +27,13 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
   const [asked, setAsked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const [guide, setGuide] = useState<ToolGuide | null>(null);
+  const [guideLoading, setGuideLoading] = useState(true);
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState<GuideAnswer | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [next, setNext] = useState<NextSteps | null>(null);
+  const [reminded, setReminded] = useState(false);
 
   async function load() {
     try {
@@ -44,6 +51,35 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolKey]);
 
+  useEffect(() => {
+    let live = true;
+    getToolGuide(toolKey)
+      .then((g) => live && setGuide(g))
+      .catch(() => live && setGuide(null))
+      .finally(() => live && setGuideLoading(false));
+    return () => { live = false; };
+  }, [toolKey]);
+
+  async function refreshNext() {
+    try { setNext(await getToolNextSteps(toolKey)); } catch { /* the page works without it */ }
+  }
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshNext();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toolKey]);
+
+  async function ask() {
+    if (question.trim().length < 2) return;
+    setAsking(true);
+    try { setAnswer(await askToolGuide(toolKey, question.trim())); } catch (err) { setError(err instanceof Error ? err.message : "Question impossible."); }
+    setAsking(false);
+  }
+
+  async function remind() {
+    try { await addToolReminder(toolKey); setReminded(true); } catch (err) { setError(err instanceof Error ? err.message : "Rappel impossible."); }
+  }
+
   async function upload(files: FileList | File[]) {
     setBusy(true);
     const done: Outcome[] = [...outcomes];
@@ -57,6 +93,7 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
     }
     setBusy(false);
     await load();
+    await refreshNext();
   }
 
   async function askConnection() {
@@ -99,9 +136,62 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
 
           <div className="mt-9 rounded-2xl border border-border p-6">
             <p className="text-[12px] font-bold uppercase tracking-wide text-accent-strong">Récupérer vos données</p>
-            <p className="mt-2 text-[14px] text-text-soft">
-              <span className="font-semibold text-text">1. Exportez-les depuis {label}.</span> {item.export_help}
-            </p>
+            <p className="mt-2 text-[14px] font-semibold text-text">1. Exportez-les depuis {label}.</p>
+            {guideLoading && <p className="mt-2 text-[13px] text-text-faint">Je cherche la procédure de {label} dans sa documentation…</p>}
+            {!guideLoading && guide?.status === "sourced" && (
+              <div className="mt-3 rounded-xl bg-surface-sunken p-4">
+                <ol className="space-y-2.5">
+                  {guide.steps.map((s, i) => (
+                    <li key={i} className="flex gap-3 text-[13.5px] text-text-soft">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-white">{i + 1}</span>
+                      <span><span className="font-semibold text-text">{s.title}</span>{s.title && s.detail ? " : " : ""}{s.detail}</span>
+                    </li>
+                  ))}
+                </ol>
+                {guide.caveats && <p className="mt-3 text-[12.5px] text-text-soft">À savoir : {guide.caveats}</p>}
+                <p className="mt-3 text-[12px] text-text-faint">
+                  Procédure trouvée dans la documentation :{" "}
+                  {guide.sources.map((u, i) => (
+                    <a key={u} href={u} target="_blank" rel="noreferrer" className="mr-2 font-semibold text-accent-strong hover:underline">source {i + 1}</a>
+                  ))}
+                </p>
+              </div>
+            )}
+            {!guideLoading && guide?.status !== "sourced" && (
+              <div className="mt-3 rounded-xl bg-surface-sunken p-4 text-[13.5px] text-text-soft">
+                <p className="font-semibold text-text">
+                  {guide?.status === "no_sources" ? `Je n'ai pas trouvé de procédure fiable pour ${label}, donc je ne vous en invente pas.` : "La recherche de procédure n'est pas disponible pour le moment."}
+                </p>
+                <p className="mt-1.5">Instructions générales, non vérifiées pour {label} : {item.export_help}</p>
+              </div>
+            )}
+            <div className="mt-3">
+              <p className="text-[12.5px] font-semibold text-text-faint">Une question, un blocage ?</p>
+              <div className="mt-1.5 flex gap-2">
+                <input
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void ask(); }}
+                  placeholder={`Ex. : je ne trouve pas l'export dans ${label}`}
+                  className="min-w-0 flex-1 rounded-xl border-[1.5px] border-border-strong bg-surface px-3.5 py-2 text-[13.5px] outline-none focus:border-accent"
+                />
+                <button type="button" disabled={asking} onClick={() => void ask()} className="rounded-full bg-text px-5 py-2 text-[13px] font-semibold text-surface hover:bg-text/90 disabled:opacity-50">
+                  {asking ? "Recherche…" : "Demander"}
+                </button>
+              </div>
+              {answer && (
+                <div className="mt-2.5 rounded-xl border border-border p-3.5 text-[13.5px] text-text-soft">
+                  <p className="whitespace-pre-line">{answer.answer}</p>
+                  {answer.sources.length > 0 && (
+                    <p className="mt-2 text-[12px] text-text-faint">
+                      {answer.sources.map((u, i) => (
+                        <a key={u} href={u} target="_blank" rel="noreferrer" className="mr-2 font-semibold text-accent-strong hover:underline">source {i + 1}</a>
+                      ))}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
             <p className="mt-2 text-[14px] font-semibold text-text">2. Déposez le fichier ici.</p>
 
             <div
@@ -141,6 +231,25 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
               <p key={i} className="mt-3 text-[13px] text-danger"><span className="font-semibold">{o.file}</span> : {o.error}</p>
             ))}
           </div>
+
+          {next && (next.notes.length > 0 || next.suggestions.length > 0) && next.imported_kinds.length > 0 && (
+            <div className="mt-5 rounded-2xl border border-accent/40 bg-accent-soft p-6">
+              <p className="text-[12px] font-bold uppercase tracking-wide text-accent-strong">Et maintenant ?</p>
+              {next.notes.map((n) => <p key={n} className="mt-2 text-[13.5px] text-text">{n}</p>)}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {next.suggestions.map((sg) => {
+                  if (sg.action === "reminder" && reminded) return <span key="r" className="px-1 py-2 text-[13px] font-semibold text-success">Rappel ajouté au calendrier.</span>;
+                  if (sg.action === "request_connection" && asked) return null;
+                  const run = sg.action === "upload" ? () => picker.current?.click() : sg.action === "reminder" ? () => void remind() : () => void askConnection();
+                  return (
+                    <button key={`${sg.action}-${sg.kind ?? ""}`} type="button" onClick={run} className="rounded-full border-[1.5px] border-border-strong bg-surface px-4 py-2 text-[13px] font-semibold text-text hover:border-accent hover:text-accent">
+                      {sg.text}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="mt-5 rounded-2xl border border-border p-6">
             <p className="text-[12px] font-bold uppercase tracking-wide text-text-faint">Connexion directe</p>

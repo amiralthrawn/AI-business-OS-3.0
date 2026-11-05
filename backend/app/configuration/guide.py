@@ -1,0 +1,186 @@
+"""The connection guide: an agent that looks up, for each tool a company
+declared, how to get its data out, and helps through the sync.
+
+Honesty rules (decided with the product owner):
+- Steps are shown only when the web search returned real sources for them.
+  Without sources the agent says it found nothing and falls back to the
+  generic, clearly labelled, category instructions. It never invents a menu.
+- It acts only inside the sync (suggest the next file, request a connection,
+  put a reminder in the calendar); nothing leaves the company.
+"""
+
+import json
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy.orm import Session
+
+from app.agents import perplexity
+from app.business_context.service import BusinessContextService
+from app.configuration import tools
+
+KIND_LABEL = {
+    "fec": "écritures comptables (FEC)",
+    "customers": "clients",
+    "suppliers": "fournisseurs",
+    "products": "produits",
+    "sales": "ventes",
+    "purchases": "achats",
+}
+MAX_QUESTION = 600
+
+_RESEARCH_SYSTEM = (
+    "Tu aides une PME française à exporter ses données depuis un logiciel. "
+    "Réponds UNIQUEMENT à partir de la documentation officielle ou d'articles d'aide que tu trouves. "
+    "N'invente jamais un menu, un bouton ou une option : si tu ne trouves pas la procédure exacte, réponds found=false. "
+    "Réponds en JSON strict, sans texte autour : "
+    '{"found": true|false, "steps": [{"title": "court", "detail": "une phrase simple, pour un non-technicien"}], '
+    '"caveats": "limites ou conditions (version, droits d\'administrateur), ou vide"}. '
+    "Entre 3 et 7 étapes, en français."
+)
+
+_ASK_SYSTEM = (
+    "Tu es l'assistant de connexion d'une PME française qui configure un logiciel de pilotage. "
+    "Réponds en français, simplement, en quelques phrases, uniquement à partir de la documentation que tu trouves pour le logiciel demandé. "
+    "Si tu ne trouves pas l'information, dis-le clairement plutôt que de deviner."
+)
+
+
+class GuideError(RuntimeError):
+    pass
+
+
+def _label_and_category(tool_key: str) -> tuple[str, tools.Category]:
+    info = tools.tool_info(tool_key)
+    if info is None:
+        raise KeyError(tool_key)
+    return info
+
+
+def _parse_json(text: str) -> dict | None:
+    cleaned = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
+    start, end = cleaned.find("{"), cleaned.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        data = json.loads(cleaned[start : end + 1])
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _generic(tool_key: str) -> str:
+    _, category = _label_and_category(tool_key)
+    return tools.KNOWN_EXPORTS.get(tool_key, category.export)
+
+
+def _clean_steps(raw: object) -> list[dict]:
+    steps: list[dict] = []
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict):
+            continue
+        title, detail = str(item.get("title") or "").strip(), str(item.get("detail") or "").strip()
+        if title or detail:
+            steps.append({"title": title[:120], "detail": detail[:400]})
+    return steps[:7]
+
+
+def _store(session: Session, company_id: uuid.UUID, tool_key: str, guide: dict) -> None:
+    context = BusinessContextService(session).get_or_create(company_id)
+    config = dict(context.configuration or {})
+    guides = dict(config.get("tool_guides") or {})
+    guides[tool_key] = guide
+    config["tool_guides"] = guides
+    context.configuration = config
+    session.add(context)
+    session.commit()
+
+
+def get_guide(session: Session, company_id: uuid.UUID, tool_key: str, *, refresh: bool = False) -> dict:
+    """Cached per tool. status: sourced | no_sources | unavailable."""
+
+    label, category = _label_and_category(tool_key)
+    config = dict(BusinessContextService(session).get_or_create(company_id).configuration or {})
+    cached = (config.get("tool_guides") or {}).get(tool_key)
+    if cached and not refresh and cached.get("status") != "unavailable":
+        return {**cached, "generic": _generic(tool_key)}
+
+    base = {"tool": tool_key, "label": label, "generic": _generic(tool_key), "researched_at": datetime.now(timezone.utc).isoformat()}
+    if not perplexity.configured():
+        return {**base, "status": "unavailable", "steps": [], "sources": [], "caveats": ""}
+
+    wanted = ", ".join(KIND_LABEL[k] for k in category.import_kinds) or "ses relevés"
+    question = (
+        f"Comment exporter depuis le logiciel « {label} » ({category.label}) en CSV ou Excel : {wanted} ? "
+        "Donne la procédure exacte telle que documentée, et dis si le logiciel permet aussi un export automatique ou une API."
+    )
+    try:
+        text, sources = perplexity.ask(_RESEARCH_SYSTEM, question)
+    except perplexity.PerplexityError:
+        return {**base, "status": "unavailable", "steps": [], "sources": [], "caveats": ""}
+    parsed = _parse_json(text) or {}
+    steps = _clean_steps(parsed.get("steps"))
+    found = bool(parsed.get("found")) and bool(steps) and bool(sources)
+    guide = {
+        **base,
+        "status": "sourced" if found else "no_sources",
+        "steps": steps if found else [],
+        "sources": sources[:6] if found else [],
+        "caveats": str(parsed.get("caveats") or "")[:400] if found else "",
+    }
+    _store(session, company_id, tool_key, {k: v for k, v in guide.items() if k != "generic"})
+    return guide
+
+
+def ask(session: Session, company_id: uuid.UUID, tool_key: str, question: str) -> dict:
+    label, category = _label_and_category(tool_key)
+    question = question.strip()[:MAX_QUESTION]
+    if not perplexity.configured():
+        return {"answer": "Je ne peux pas chercher sur le web pour le moment (recherche non configurée). Utilisez les instructions générales de la page.", "sources": [], "grounded": False}
+    try:
+        text, sources = perplexity.ask(_ASK_SYSTEM, f"Logiciel : {label} ({category.label}).\nQuestion du client : {question}")
+    except perplexity.PerplexityError:
+        return {"answer": "La recherche est momentanément indisponible. Réessayez dans un instant.", "sources": [], "grounded": False}
+    if not sources:
+        return {"answer": "Je n'ai trouvé aucune source fiable pour répondre à cette question, donc je préfère ne pas deviner. Voulez-vous que nous vous aidions directement ?", "sources": [], "grounded": False}
+    return {"answer": text.strip()[:1500], "sources": sources[:5], "grounded": True}
+
+
+def next_steps(config: dict, tool_key: str) -> dict:
+    """What the agent proposes after reading what has been imported for this
+    tool. Deterministic: every statement comes from the recorded imports."""
+
+    label, category = _label_and_category(tool_key)
+    mine = [i for i in (config.get("imports") or []) if i.get("tool") == tool_key]
+    got = {i["kind"] for i in mine}
+    state = (config.get("tools") or {}).get(tool_key) or {}
+    suggestions: list[dict] = []
+    notes: list[str] = []
+
+    for entry in mine[-3:]:
+        total = entry.get("created", 0) + entry.get("updated", 0) + entry.get("skipped", 0)
+        if total and entry.get("skipped", 0) / total > 0.3:
+            notes.append(f"{entry.get('file', 'Un fichier')} : {entry['skipped']} lignes sur {total} n'ont pas pu être lues. Vérifiez que l'export contient bien les colonnes d'origine.")
+    for kind in category.import_kinds:
+        if kind not in got:
+            suggestions.append({"action": "upload", "kind": kind, "text": f"Ajouter vos {KIND_LABEL[kind]} depuis {label}"})
+    if got and state.get("connection") != "requested":
+        suggestions.append({"action": "request_connection", "text": f"Faire connecter {label} pour qu'il se mette à jour sans fichier"})
+    if got:
+        suggestions.append({"action": "reminder", "text": f"Me rappeler de refaire l'export de {label} dans 30 jours"})
+    return {"imported_kinds": sorted(got), "notes": notes, "suggestions": suggestions}
+
+
+def add_reminder(session: Session, company_id: uuid.UUID, tool_key: str, user_id: uuid.UUID | None) -> dict:
+    from app.core.entities import CalendarEvent
+
+    label, _ = _label_and_category(tool_key)
+    when = (datetime.now(timezone.utc) + timedelta(days=30)).replace(hour=9, minute=0, second=0, microsecond=0)
+    event = CalendarEvent(
+        company_id=company_id, title=f"Refaire l'export de {label}", kind="deadline", starts_at=when, all_day=True,
+        notes="Rappel de l'assistant de connexion : déposez un export à jour pour garder vos décisions fiables.", created_by=user_id,
+    )
+    session.add(event)
+    session.commit()
+    return {"id": str(event.id), "starts_at": when.isoformat()}

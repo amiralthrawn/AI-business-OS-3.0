@@ -95,3 +95,16 @@ export type ImportResultRead = {
   recognised_columns: Record<string, string>;
   summary: IntegrationPlan["fec_summary"];
 };
+
+export type ToolGuide = {
+  tool: string;
+  label: string;
+  status: "sourced" | "no_sources" | "unavailable";
+  steps: { title: string; detail: string }[];
+  sources: string[];
+  caveats: string;
+  generic: string;
+};
+export type GuideAnswer = { answer: string; sources: string[]; grounded: boolean };
+export type NextStep = { action: "upload" | "request_connection" | "reminder"; kind?: ImportKind; text: string };
+export type NextSteps = { imported_kinds: ImportKind[]; notes: string[]; suggestions: NextStep[] };

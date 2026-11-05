@@ -253,7 +253,7 @@ KNOWN_EXPORTS: dict[str, str] = {
     "salesforce": "Salesforce : Rapports → créer un rapport « Comptes » → Exporter → CSV.",
     "hubspot": "HubSpot : Contacts / Sociétés → Exporter → CSV.",
     "excel": "Excel : Fichier → Enregistrer sous → .xlsx. Une feuille par fichier (clients, fournisseurs, produits).",
-    "sap_s4hana": "SAP : transaction de rapport (ex. XD03 / MM60) → exporter la liste en tableur ; ou extraction de tables via votre équipe IT.",
+    "sap_s4hana": "SAP S/4HANA : les listes (clients, fournisseurs, articles) s'exportent en tableur depuis les rapports ou applications de liste ; si vous ne les trouvez pas, votre équipe IT ou votre intégrateur peut extraire les tables pour vous.",
     "sap_business_one": "SAP Business One : Gestion des données → Exporter vers Excel depuis la liste partenaires et articles.",
     "oracle_netsuite": "NetSuite : Listes → Clients / Fournisseurs / Articles → Exporter en CSV.",
     "power_bi": "Power BI : dans le rapport, ··· → Exporter les données ; ou nous lister les mesures et tables suivies.",
