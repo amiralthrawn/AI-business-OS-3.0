@@ -118,7 +118,7 @@ def get_guide(session: Session, company_id: uuid.UUID, tool_key: str, *, refresh
     try:
         text, sources = perplexity.ask(_RESEARCH_SYSTEM, question)
     except perplexity.PerplexityError as exc:
-        return {**base, "status": "unavailable", "reason": str(exc)[:200], "steps": [], "sources": [], "caveats": ""}
+        return {**base, "status": "unavailable", "reason": str(exc)[:900], "steps": [], "sources": [], "caveats": ""}
     parsed = _parse_json(text) or {}
     steps = _clean_steps(parsed.get("steps"))
     found = bool(parsed.get("found")) and bool(steps) and bool(sources)

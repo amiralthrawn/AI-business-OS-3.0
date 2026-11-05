@@ -51,7 +51,7 @@ def ask(system: str, user: str, *, timeout: float = 90.0) -> tuple[str, list[str
     if res.status_code == 400 and "tools" in body:  # keep working if the tool is implied by the effort level
         res = _post({k: v for k, v in body.items() if k != "tools"}, timeout)
     if res.status_code != 200:
-        raise PerplexityError(f"Perplexity answered {res.status_code}: {res.text[:200]}")
+        raise PerplexityError(f"Perplexity answered {res.status_code}: {res.text[:900]}")
     try:
         output = res.json()["output"]
     except (KeyError, TypeError, ValueError) as exc:
