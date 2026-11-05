@@ -115,3 +115,23 @@ def test_parse_items_tolerates_code_fences_and_noise():
     text = "Voici :\n```json\n[{\"title\": \"A\"}, {\"nope\": 1}]\n```"
     assert [i["title"] for i in veilleur.parse_items(text)] == ["A"]
     assert veilleur.parse_items("aucun résultat") == []
+
+
+def test_perplexity_agent_api_response_is_parsed(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(get_settings(), "perplexity_api_key", "k")
+    seen = {}
+
+    def fake_post(url, headers, json, timeout):
+        seen.update(url=url, body=json)
+        payload = {"output": [
+            {"type": "search_results", "results": [{"id": 1, "url": "https://a.example/x"}, {"id": 2, "url": "https://b.example/y"}]},
+            {"type": "message", "content": [{"type": "output_text", "text": "Réponse utile[1][2]."}]},
+        ]}
+        return httpx.Response(200, json=payload)
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    text, sources = perplexity.ask("sys", "question")
+    assert text == "Réponse utile." and sources == ["https://a.example/x", "https://b.example/y"]
+    assert seen["url"].endswith("/v1/agent") and seen["body"]["instructions"] == "sys" and seen["body"]["effort"] == "fast"
