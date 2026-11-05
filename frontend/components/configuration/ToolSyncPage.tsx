@@ -162,9 +162,9 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
                 <p className="font-semibold text-text">
                   {guide?.status === "no_sources" ? `Je n'ai pas trouvé de procédure fiable pour ${label}, donc je ne vous en invente pas.` : "La recherche de procédure n'est pas disponible pour le moment."}
                 </p>
-                {guide?.status === "unavailable" && guide.reason && (
+                {guide?.reason && (
                   <p className="mt-1.5 text-[12.5px] text-text-faint">
-                    Raison technique : {guide.reason === "not_configured" ? "aucune clé de recherche (OPENROUTER_API_KEY) n'est lue par le serveur (API)." : guide.reason}
+                    Détail : {guide.reason === "not_configured" ? "aucune clé de recherche (OPENROUTER_API_KEY) n'est lue par le serveur (API)." : guide.reason}
                   </p>
                 )}
                 <p className="mt-1.5">Instructions générales, non vérifiées pour {label} : {item.export_help}</p>

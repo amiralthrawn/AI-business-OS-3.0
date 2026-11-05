@@ -302,12 +302,12 @@ def test_guide_shows_steps_only_when_sources_are_found(client, monkeypatch):
     from app.agents import perplexity
 
     monkeypatch.setattr(get_settings(), "perplexity_api_key", "k")
-    answer = '{"found": true, "steps": [{"title": "Ouvrir", "detail": "Allez dans Exports."}], "caveats": ""}'
+    answer = "1. Ouvrir : Allez dans Exports.\n2. **Choisir** : Cliquez sur FEC.\nÀ savoir : droits administrateur requis."
     monkeypatch.setattr(perplexity, "ask", lambda system, user, **kw: (answer, ["https://help.example.org/export"]))
     headers = _director(client)
     _with_tools(client, headers, ["pennylane", "qonto"])
     sourced = client.get("/configuration/tools/pennylane/guide", headers=headers).json()
-    assert sourced["status"] == "sourced" and sourced["sources"] == ["https://help.example.org/export"] and len(sourced["steps"]) == 1
+    assert sourced["status"] == "sourced" and sourced["sources"] == ["https://help.example.org/export"] and len(sourced["steps"]) == 2 and sourced["steps"][1]["title"] == "Choisir" and "administrateur" in sourced["caveats"]
 
     # same steps but no source: the agent must not present them
     monkeypatch.setattr(perplexity, "ask", lambda system, user, **kw: (answer, []))

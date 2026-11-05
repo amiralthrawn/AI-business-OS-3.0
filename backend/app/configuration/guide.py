@@ -9,7 +9,6 @@ Honesty rules (decided with the product owner):
   put a reminder in the calendar); nothing leaves the company.
 """
 
-import json
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -33,11 +32,10 @@ MAX_QUESTION = 600
 _RESEARCH_SYSTEM = (
     "Tu aides une PME française à exporter ses données depuis un logiciel. "
     "Réponds UNIQUEMENT à partir de la documentation officielle ou d'articles d'aide que tu trouves. "
-    "N'invente jamais un menu, un bouton ou une option : si tu ne trouves pas la procédure exacte, réponds found=false. "
-    "Réponds en JSON strict, sans texte autour : "
-    '{"found": true|false, "steps": [{"title": "court", "detail": "une phrase simple, pour un non-technicien"}], '
-    '"caveats": "limites ou conditions (version, droits d\'administrateur), ou vide"}. '
-    "Entre 3 et 7 étapes, en français."
+    "N'invente jamais un menu, un bouton ou une option. "
+    "Si tu ne trouves aucune procédure documentée, réponds exactement : NON_TROUVE. "
+    "Sinon réponds par une liste numérotée de 3 à 7 étapes, une par ligne, au format « 1. Titre court : une phrase simple pour un non-technicien ». "
+    "Puis, sur une dernière ligne qui commence par « À savoir : », les limites éventuelles (version, droits d'administrateur). Rien d'autre."
 )
 
 _ASK_SYSTEM = (
@@ -58,16 +56,32 @@ def _label_and_category(tool_key: str) -> tuple[str, tools.Category]:
     return info
 
 
-def _parse_json(text: str) -> dict | None:
-    cleaned = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
-    start, end = cleaned.find("{"), cleaned.rfind("}")
-    if start < 0 or end <= start:
-        return None
-    try:
-        data = json.loads(cleaned[start : end + 1])
-    except ValueError:
-        return None
-    return data if isinstance(data, dict) else None
+_STEP = re.compile(r"^\s*(\d+)[.)]\s+(.+)$")
+
+
+def _plain(text: str) -> str:
+    return re.sub(r"[*_`#]+", "", text).strip()
+
+
+def _parse_steps(text: str) -> tuple[list[dict], str]:
+    """Numbered lines -> steps; a trailing 'À savoir :' line -> caveats."""
+
+    steps: list[dict] = []
+    caveats = ""
+    for line in text.splitlines():
+        line = line.strip()
+        if line.lower().lstrip("*_ ").startswith("à savoir"):
+            caveats = _plain(line.split(":", 1)[-1])[:400]
+            continue
+        m = _STEP.match(line)
+        if not m:
+            continue
+        body = _plain(m.group(2))
+        title, sep, detail = body.partition(":")
+        if not sep:
+            title, detail = "", body
+        steps.append({"title": title.strip()[:120], "detail": detail.strip()[:400]})
+    return steps[:7], caveats
 
 
 def _generic(tool_key: str) -> str:
@@ -119,15 +133,22 @@ def get_guide(session: Session, company_id: uuid.UUID, tool_key: str, *, refresh
         text, sources = perplexity.ask(_RESEARCH_SYSTEM, question)
     except perplexity.PerplexityError as exc:
         return {**base, "status": "unavailable", "reason": str(exc)[:900], "steps": [], "sources": [], "caveats": ""}
-    parsed = _parse_json(text) or {}
-    steps = _clean_steps(parsed.get("steps"))
-    found = bool(parsed.get("found")) and bool(steps) and bool(sources)
+    if "NON_TROUVE" in text:
+        steps, caveats, why = [], "", "La recherche n'a trouvé aucune procédure documentée."
+    else:
+        steps, caveats = _parse_steps(text)
+        why = ""
+        if len(steps) < 2:
+            steps, why = [], "La réponse trouvée n'était pas une procédure exploitable."
+    if steps and not sources:
+        steps, why = [], "Une procédure a été proposée mais sans aucune source : je ne l'affiche pas."
     guide = {
         **base,
-        "status": "sourced" if found else "no_sources",
-        "steps": steps if found else [],
-        "sources": sources[:6] if found else [],
-        "caveats": str(parsed.get("caveats") or "")[:400] if found else "",
+        "status": "sourced" if steps else "no_sources",
+        "steps": steps,
+        "sources": sources[:6] if steps else [],
+        "caveats": caveats if steps else "",
+        "reason": why,
     }
     _store(session, company_id, tool_key, {k: v for k, v in guide.items() if k != "generic"})
     return guide
