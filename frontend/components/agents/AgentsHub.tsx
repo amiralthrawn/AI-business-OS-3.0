@@ -78,7 +78,7 @@ function AgentCard({ agent, requests, usage, catalog, onChanged }: { agent: Agen
             {requests.slice(-3).reverse().map((r) => (
               <li key={r.id} className="rounded-lg bg-surface px-3 py-2 text-text-soft">
                 <span className="font-semibold text-text">Demande : {r.wanted}</span> · {fmtDate(r.at)} ·{" "}
-                <span className="font-semibold text-accent-strong">{r.status === "requested" ? "Enregistrée, nous revenons vers vous" : r.status}</span>
+                <span className="font-semibold text-accent-strong">{r.status === "requested" ? "Reçue : nous la traitons sous 24 h" : r.status}</span>
                 {r.reason ? <span className="block text-text-faint">{r.reason}</span> : null}
               </li>
             ))}
@@ -170,7 +170,7 @@ function ModelRequestForm({ agent, catalog, onSent }: { agent: Agent; catalog: A
         <Button loading={busy} disabled={other && detail.trim().length < 2} onClick={() => void send()}>Envoyer la demande</Button>
         <Button variant="ghost" onClick={() => setOpen(false)}>Annuler</Button>
       </div>
-      <p className="text-[11.5px] text-text-faint">Un changement de modèle a un coût et se décide avec nous : votre demande est enregistrée, rien ne change tout seul.</p>
+      <p className="text-[11.5px] text-text-faint">Notre équipe reçoit votre demande et change ou améliore la solution IA pour vous, sous 24 h ou plus vite.</p>
     </div>
   );
 }
