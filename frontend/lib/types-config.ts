@@ -59,7 +59,7 @@ export type ConfigurationUpdate = {
   answer_notes?: Record<string, string>;
 };
 
-export type ImportKind = "customers" | "suppliers" | "products" | "fec" | "sales" | "purchases";
+export type ImportKind = "customers" | "suppliers" | "products" | "fec" | "sales" | "purchases" | "stock" | "prospects";
 
 export type IntegrationItem = {
   key: string;

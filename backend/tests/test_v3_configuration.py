@@ -340,3 +340,70 @@ def test_next_steps_and_reminder_are_real(client, monkeypatch):
     assert {"upload", "request_connection", "reminder"} <= actions
     assert client.post("/configuration/tools/pennylane/reminder", headers=headers).status_code == 201
     assert client.get("/configuration/tools/nope/next-steps", headers=headers).status_code == 404
+
+
+# ---------------------------------------------------------------- stock and prospect lists
+
+
+def test_stock_list_becomes_products_and_physical_stock(client, session_factory):
+    from app.core.entities import Product
+    from app.core.entities.catalog import StockKind, StockPosition
+
+    headers = _director(client)
+    csv = ("Model;DC;Quantity;Manufacturer;Categories;Emplacement\n"
+           "ZyXEL ES-108A V3;;2;ZyXEL;-;AA4\n"
+           "ZyXEL ES-108A V3;;3;ZyXEL;-;AA4\n"
+           "LM317T;2142;100;Texas Instruments;Electronic Components > ICs;B1\n"
+           "LM317T;2301;50;Texas Instruments;Electronic Components > ICs;B1\n"
+           ";;4;X;-;Z\n").encode()
+    res = client.post("/configuration/imports/auto", headers=headers, files={"file": ("stock.csv", csv, "text/csv")})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["kind"] == "stock" and body["skipped"] == 1 and body["created"] == 3
+    with session_factory() as db:
+        products = {p.name: p for p in db.query(Product).all()}
+        assert set(products) == {"ZyXEL ES-108A V3", "LM317T"} and products["LM317T"].manufacturer == "Texas Instruments"
+        quantities = sorted((s.location, s.quantity) for s in db.query(StockPosition).all())
+        assert quantities == [("AA4", 5.0), ("B1 · DC 2142", 100.0), ("B1 · DC 2301", 50.0)]
+        assert all(s.kind == StockKind.PHYSICAL for s in db.query(StockPosition).all())
+    again = client.post("/configuration/imports/auto", headers=headers, files={"file": ("stock.csv", csv, "text/csv")}).json()
+    assert again["created"] == 0 and again["updated"] == 3
+
+
+def test_prospect_list_is_imported_as_prospects_with_contacts(client, session_factory):
+    from app.core.entities import Contact, Customer
+
+    headers = _director(client)
+    csv = ("SIREN;Nom : raison sociale;contact achats;mail achats;Mail générique;Téléphone;NAF : libellé (global);Adresse : code postal;Adresse : ville;Dirigeant 1 : prénom;Dirigeant 1 : nom;Dirigeant 1 : fonction\n"
+           "055503130;APPAREILS PRECISION;Axel Pelatan;achats@ap.fr;contact@ap.fr;04 76 99 28 00;Fabrication de matériel;38640;CLAIX;Christopher;PELATAN;Président\n"
+           "015551278;SOBEM;;;;;Fabrication;21000;DIJON;;;\n").encode()
+    res = client.post("/configuration/imports/auto", headers=headers, files={"file": ("prospects.csv", csv, "text/csv")}).json()
+    assert res["kind"] == "prospects" and res["created"] == 2
+    with session_factory() as db:
+        customers = {c.name: c for c in db.query(Customer).all()}
+        assert {c.status for c in customers.values()} == {"prospect"}
+        assert "SIREN 055503130" in customers["APPAREILS PRECISION"].notes and "38640 CLAIX" in customers["APPAREILS PRECISION"].notes
+        contacts = sorted((c.name, c.role) for c in db.query(Contact).all())
+        assert contacts == [("Axel Pelatan", "Contact achats"), ("Christopher Pelatan", "Président")]
+    again = client.post("/configuration/imports/auto", headers=headers, files={"file": ("prospects.csv", csv, "text/csv")}).json()
+    assert again["created"] == 0
+    with session_factory() as db:
+        assert db.query(Contact).count() == 2
+
+
+import os
+
+_REAL = "/mnt/user-data/uploads/hearth"
+
+
+@pytest.mark.skipif(not os.path.isdir(_REAL), reason="real sample files are only on the dev machine")
+def test_real_xls_files_import(client):
+    import glob
+
+    headers = _director(client)
+    kinds = {}
+    for path in glob.glob(f"{_REAL}/*/*.xls"):
+        res = client.post("/configuration/imports/auto", headers=headers, files={"file": (os.path.basename(path), open(path, "rb").read(), "application/vnd.ms-excel")})
+        assert res.status_code == 200, res.text
+        kinds[res.json()["kind"]] = res.json()
+    assert kinds["stock"]["created"] > 7000 and kinds["prospects"]["created"] > 1900

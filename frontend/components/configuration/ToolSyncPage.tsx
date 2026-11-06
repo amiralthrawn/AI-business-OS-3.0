@@ -11,6 +11,8 @@ const KIND_LABEL: Record<ImportKind, string> = {
   products: "produits",
   sales: "ventes",
   purchases: "achats",
+  stock: "références en stock",
+  prospects: "prospects",
 };
 const fmt = (n: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(n);
 
@@ -210,7 +212,7 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
                 type="file"
                 multiple
                 className="hidden"
-                accept=".csv,.xlsx,.xlsm,.txt,.fec,text/csv,text/plain"
+                accept=".csv,.xls,.xlsx,.xlsm,.txt,.fec,text/csv,text/plain"
                 onChange={(e) => { if (e.target.files?.length) void upload(e.target.files); e.target.value = ""; }}
               />
               <p className="text-[14px] text-text-soft">{busy ? "Lecture en cours…" : "Glissez vos fichiers ici, ou"}</p>

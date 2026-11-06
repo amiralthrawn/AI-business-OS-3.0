@@ -170,7 +170,7 @@ async def import_file(
     event_bus: EventBus = Depends(get_event_bus),
     _user: CurrentUser = Depends(require(access.WRITE_SETTINGS)),
 ) -> dict:
-    if kind not in ("customers", "suppliers", "products", "fec", "sales", "purchases"):
+    if kind not in ("customers", "suppliers", "products", "fec", "sales", "purchases", "stock", "prospects"):
         raise HTTPException(status_code=404, detail=tx("Type d'import inconnu", "Unknown import type"))
     company = _company(db)
     content = await file.read(imports.MAX_BYTES + 1)
@@ -184,7 +184,14 @@ async def _run_import(db: Session, company: Company, kind: str, filename: str, c
         else:
             summary = None
             table = imports.read_table(filename, content)
-            result = imports.import_transactions(db, company.id, kind, table) if kind in ("sales", "purchases") else imports.import_entities(db, company.id, kind, table)
+            if kind == "stock":
+                result = imports.import_stock(db, company.id, table, filename)
+            elif kind == "prospects":
+                result = imports.import_prospects(db, company.id, table)
+            elif kind in ("sales", "purchases"):
+                result = imports.import_transactions(db, company.id, kind, table)
+            else:
+                result = imports.import_entities(db, company.id, kind, table)
     except imports.ImportError_ as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc

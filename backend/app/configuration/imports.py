@@ -80,8 +80,8 @@ def read_table(filename: str, content: bytes) -> list[dict[str, str]]:
     name = (filename or "").lower()
     if name.endswith(".xlsx") or name.endswith(".xlsm") or content[:2] == b"PK":
         return _read_xlsx(content)
-    if name.endswith(".xls"):
-        raise ImportError_("Le format .xls ancien n'est pas lisible : enregistrez le fichier en .xlsx ou .csv.")
+    if name.endswith(".xls") or content[:4] == b"\xd0\xcf\x11\xe0":
+        return _read_xls(content)
     return _read_csv(content)
 
 
@@ -118,6 +118,24 @@ def _read_xlsx(content: bytes) -> list[dict[str, str]]:
     return _rows_to_dicts(rows)
 
 
+def _read_xls(content: bytes) -> list[dict[str, str]]:
+    """Old Excel format (.xls, 97-2003). First sheet only."""
+
+    import xlrd
+
+    try:
+        sheet = xlrd.open_workbook(file_contents=content).sheet_by_index(0)
+    except Exception as exc:  # noqa: BLE001 - any parser failure is "unreadable file"
+        raise ImportError_("Le fichier Excel (.xls) n'a pas pu être lu.") from exc
+
+    def cell(value: object) -> str:
+        if isinstance(value, float):
+            return str(int(value)) if value == int(value) else repr(value)
+        return str(value)
+
+    return _rows_to_dicts([[cell(v) for v in sheet.row_values(r)] for r in range(sheet.nrows)])
+
+
 def _rows_to_dicts(rows: list[list[str]]) -> list[dict[str, str]]:
     rows = [r for r in rows if any(str(c).strip() for c in r)]
     if len(rows) < 2:
@@ -125,7 +143,8 @@ def _rows_to_dicts(rows: list[list[str]]) -> list[dict[str, str]]:
     header = [str(h).strip() for h in rows[0]]
     if len(rows) - 1 > MAX_ROWS:
         raise ImportError_(f"Trop de lignes ({len(rows) - 1}, maximum {MAX_ROWS}).")
-    return [{header[i]: (str(r[i]).strip() if i < len(r) else "") for i in range(len(header)) if header[i]} for r in rows[1:]]
+    keep = [i for i, h in enumerate(header) if h and h not in header[:i]]  # a repeated header keeps its first column
+    return [{header[i]: (str(r[i]).strip() if i < len(r) else "") for i in keep} for r in rows[1:]]
 
 
 def _map_columns(kind: str, columns: list[str]) -> dict[str, str]:
@@ -220,6 +239,217 @@ def import_entities(session: Session, company_id: uuid.UUID, kind: str, rows: li
     return result
 
 
+# --- Stock list (physical stock of the company) --------------------------------
+
+_STOCK_COLUMNS = {
+    "model": ("model", "modele", "reference", "ref", "sku", "partnumber", "pn", "mpn", "designation", "article"),
+    "quantity": ("quantity", "quantite", "qty", "qte", "stock", "stockphysique"),
+    "location": ("emplacement", "location", "localisation", "rayon", "depot", "entrepot"),
+    "manufacturer": ("manufacturer", "fabricant", "constructeur", "marque", "brand"),
+    "category": ("categories", "category", "categorie", "famille", "gamme"),
+    "date_code": ("dc", "datecode"),
+}
+_EMPTY_MARKS = {"", "-", "--", "n/a", "na", "none", "null"}
+
+
+def _clean(text: str) -> str:
+    return "" if text.strip().lower() in _EMPTY_MARKS else text.strip()
+
+
+def _stock_mapping(columns: list[str]) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for field_name, synonyms in _STOCK_COLUMNS.items():
+        for column in columns:
+            if _norm(column) in synonyms and column not in mapping.values():
+                mapping[field_name] = column
+                break
+    return mapping
+
+
+def looks_like_stock(columns: list[str]) -> bool:
+    mapping = _stock_mapping(columns)
+    return "model" in mapping and "quantity" in mapping and "location" in mapping
+
+
+def import_stock(session: Session, company_id: uuid.UUID, rows: list[dict[str, str]], filename: str) -> ImportResult:
+    """The company's own physical stock: one product per reference, one stock
+    position per (product, location, date code). Quantities are DECLARED by the
+    file; re-importing updates them, never duplicates."""
+
+    from app.core.entities.base import ValueBasis
+    from app.core.entities.catalog import StockKind, StockPosition
+
+    result = ImportResult(kind="stock", rows=len(rows))
+    mapping = _stock_mapping(list(rows[0].keys()) if rows else [])
+    result.recognised_columns = mapping
+    if "model" not in mapping or "quantity" not in mapping:
+        raise ImportError_("Colonnes « Référence » (ou Model) et « Quantité » introuvables.")
+
+    products = {_norm(p.sku or p.name): p for p in session.query(Product).filter_by(company_id=company_id).all()}
+    positions = {(pos.product_id, pos.location): pos for pos in session.query(StockPosition).filter_by(company_id=company_id, kind=StockKind.PHYSICAL).all() if pos.supplier_id is None}
+    totals: dict[tuple[str, str], float] = {}
+    meta: dict[str, dict[str, str]] = {}
+    for line_number, row in enumerate(rows, start=2):
+        values = {f: row.get(col, "") for f, col in mapping.items()}
+        model = values.get("model", "").strip()
+        quantity = _number(values.get("quantity", ""))
+        if not model or quantity is None or quantity < 0:
+            result.skipped += 1
+            if len(result.problems) < 10:
+                result.problems.append(f"Ligne {line_number} ignorée : référence ou quantité illisible.")
+            continue
+        place = _clean(values.get("location", ""))
+        code = _clean(values.get("date_code", ""))
+        location = (place + (f" · DC {code}" if code else "")).strip()[:120]
+        key = (_norm(model), location)
+        totals[key] = totals.get(key, 0.0) + quantity
+        meta.setdefault(_norm(model), {"model": model, "manufacturer": _clean(values.get("manufacturer", "")), "category": _clean(values.get("category", ""))})
+
+    now = datetime.now(timezone.utc)
+    for norm_model, info in meta.items():
+        product = products.get(norm_model)
+        if product is None:
+            product = Product(company_id=company_id, name=info["model"][:255], sku=info["model"][:120])
+            session.add(product)
+            products[norm_model] = product
+        if info["manufacturer"]:
+            product.manufacturer = info["manufacturer"][:120]
+        if info["category"] and not product.category:
+            product.category = info["category"][:120]
+    session.flush()
+    for (norm_model, location), quantity in totals.items():
+        product = products[norm_model]
+        existing = positions.get((product.id, location))
+        if existing is None:
+            session.add(StockPosition(company_id=company_id, product_id=product.id, kind=StockKind.PHYSICAL, location=location, quantity=quantity,
+                                      quantity_basis=ValueBasis.DECLARED, as_of=now, source=f"csv:{filename}"[:80]))
+            result.created += 1
+        else:
+            existing.quantity, existing.as_of, existing.source = quantity, now, f"csv:{filename}"[:80]
+            result.updated += 1
+    session.flush()
+    return result
+
+
+# --- Prospect list (e.g. Corporama export) ----------------------------------------
+
+_PROSPECT = {
+    "name": "nomraisonsociale",
+    "brand": "nomenseigne",
+    "siren": "siren",
+    "buyer": "contactachats",
+    "buyer_mail": "mailachats",
+    "generic_mail": "mailgenerique",
+    "phone": "telephone",
+    "naf": "nafliblledglobal",
+    "city": "adressevilleville",
+    "site": "siteweb",
+    "comment": "commentaire",
+}
+
+
+def _find(columns: list[str], *needles: str) -> str | None:
+    for column in columns:
+        n = _norm(column)
+        if all(t in n for t in needles):
+            return column
+    return None
+
+
+def _exact(columns: list[str], normalised: str) -> str | None:
+    return next((c for c in columns if _norm(c) == normalised), None)
+
+
+def looks_like_prospects(columns: list[str]) -> bool:
+    return _find(columns, "siren") is not None and _find(columns, "raisonsociale") is not None
+
+
+def import_prospects(session: Session, company_id: uuid.UUID, rows: list[dict[str, str]]) -> ImportResult:
+    """A purchased or exported list of companies to approach. They become
+    customers with the status « prospect » (never counted as business done),
+    with their purchasing contact and main executive as contacts."""
+
+    from app.core.entities import Contact
+    from app.core.entities.base import RelatedEntityType
+
+    result = ImportResult(kind="prospects", rows=len(rows))
+    columns = list(rows[0].keys()) if rows else []
+    c_name = _find(columns, "raisonsociale")
+    if c_name is None:
+        raise ImportError_("Colonne « Nom : raison sociale » introuvable.")
+    c = {
+        "siren": _find(columns, "siren"),
+        "brand": _find(columns, "enseigne"),
+        "comment": _find(columns, "commentaire"),
+        "buyer": _find(columns, "contactachats"),
+        "buyer_mail": _find(columns, "mailachats"),
+        "mail": _find(columns, "mailgenerique"),
+        "phone": _find(columns, "telephone"),
+        "naf": _exact(columns, _norm("NAF : libellé (global)")),
+        "size": _find(columns, "effectifs", "libelle", "global"),
+        "revenue": _find(columns, "ca", "derniere", "k"),
+        "revenue_year": _find(columns, "derniere", "annee", "publication"),
+        "street": _find(columns, "adresse", "rue"),
+        "zip": _find(columns, "adresse", "codepostal"),
+        "city": _find(columns, "adresse", "ville"),
+        "site": _find(columns, "siteweb"),
+        "d_first": _exact(columns, "dirigeant1prenom"),
+        "d_last": _exact(columns, "dirigeant1nom"),
+        "d_role": _exact(columns, "dirigeant1fonction"),
+    }
+
+    def get(row: dict[str, str], key: str) -> str:
+        column = c.get(key)
+        return row.get(column, "").strip() if column else ""
+
+    existing = {_norm(x.name): x for x in session.query(Customer).filter_by(company_id=company_id).all()}
+    known_contacts = {(x.related_entity_id, _norm(x.name)) for x in session.query(Contact).filter_by(company_id=company_id, related_entity_type=RelatedEntityType.CUSTOMER).all()}
+    for line_number, row in enumerate(rows, start=2):
+        name = row.get(c_name, "").strip()
+        if not name:
+            result.skipped += 1
+            if len(result.problems) < 10:
+                result.problems.append(f"Ligne {line_number} ignorée : nom vide.")
+            continue
+        key = _norm(name)
+        target = existing.get(key)
+        if target is not None and target.status != "prospect":
+            result.skipped += 1  # already a real customer: a prospect list never downgrades it
+            continue
+        created = target is None
+        if created:
+            target = Customer(company_id=company_id, name=name[:255], country="France", status="prospect")
+            session.add(target)
+            existing[key] = target
+        parts = [f"SIREN {get(row, 'siren')}" if get(row, "siren") else "", get(row, "brand") and f"Enseigne : {get(row, 'brand')}"]
+        place = " ".join(x for x in (get(row, "zip"), get(row, "city")) if x)
+        parts += [place, get(row, "naf"), get(row, "size") and f"Effectif : {get(row, 'size')}"]
+        revenue = _number(get(row, "revenue"))
+        if revenue is not None:
+            parts.append(f"CA {revenue:,.0f} k€".replace(",", " ") + (f" ({get(row, 'revenue_year')})" if get(row, "revenue_year") else ""))
+        parts += [get(row, "phone") and f"Tél. {get(row, 'phone')}", get(row, "mail"), get(row, "site"), get(row, "comment")]
+        target.notes = " · ".join(str(p) for p in parts if p)[:2000]
+        if created:
+            result.created += 1
+        else:
+            result.updated += 1
+        session.flush()
+        people = []
+        if get(row, "buyer"):
+            people.append((get(row, "buyer").title(), get(row, "buyer_mail") or None, "Contact achats"))
+        director = " ".join(x for x in (get(row, "d_first"), get(row, "d_last")) if x)
+        if director:
+            people.append((director.title(), None, get(row, "d_role") or "Dirigeant"))
+        for person, mail, role in people:
+            if (target.id, _norm(person)) in known_contacts:
+                continue
+            session.add(Contact(company_id=company_id, name=person[:255], email=(mail or "")[:255] or None, phone=get(row, "phone")[:50] or None, role=role[:120],
+                                related_entity_type=RelatedEntityType.CUSTOMER, related_entity_id=target.id))
+            known_contacts.add((target.id, _norm(person)))
+    session.flush()
+    return result
+
+
 # --- FEC ------------------------------------------------------------------
 
 _FEC_REQUIRED = ("compteNum", "ecritureDate", "debit", "credit")
@@ -229,7 +459,10 @@ def _fec_rows(content: bytes) -> list[dict[str, str]]:
     text = _decode(content)
     first = text.split("\n", 1)[0]
     delimiter = "\t" if first.count("\t") >= first.count("|") else "|"
-    rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
+    try:
+        rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
+    except csv.Error as exc:  # binary content (an Excel file) is never a FEC
+        raise ImportError_("Ce fichier n'est pas un FEC valide.") from exc
     table = _rows_to_dicts(rows)
     lowered = {k.lower(): k for k in table[0].keys()}
     for needed in _FEC_REQUIRED:
@@ -312,6 +545,11 @@ def detect_kind(filename: str, content: bytes) -> str:
     except ImportError_:
         pass
     rows = read_table(filename, content)
+    raw_columns = list(rows[0].keys())
+    if looks_like_prospects(raw_columns):
+        return "prospects"
+    if looks_like_stock(raw_columns):
+        return "stock"
     columns = [_norm(c) for c in rows[0].keys()]
     has_date = any(c in _TX_COLUMNS["date"] for c in columns)
     has_amount = any(c in _TX_COLUMNS["amount"] for c in columns) or (any(c in _TX_COLUMNS["quantity"] for c in columns) and any(c in _TX_COLUMNS["unit_price"] for c in columns))
