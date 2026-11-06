@@ -151,7 +151,14 @@ def get_guide(session: Session, company_id: uuid.UUID, tool_key: str, *, refresh
         "reason": why,
     }
     _store(session, company_id, tool_key, {k: v for k, v in guide.items() if k != "generic"})
+    _log(session, company_id, "ok" if steps else "no_sources", f"Procédure de {label} : {len(steps)} étape(s) sourcée(s)" if steps else f"Procédure de {label} : rien de fiable trouvé", len(steps))
     return guide
+
+
+def _log(session: Session, company_id: uuid.UUID, status: str, message: str, found: int = 0) -> None:
+    from app.agents import service as agents_service
+
+    agents_service.log_run(session, company_id, "guide", status, message, found)
 
 
 def ask(session: Session, company_id: uuid.UUID, tool_key: str, question: str) -> dict:
@@ -165,6 +172,7 @@ def ask(session: Session, company_id: uuid.UUID, tool_key: str, question: str) -
         return {"answer": "La recherche est momentanément indisponible. Réessayez dans un instant.", "sources": [], "grounded": False}
     if not sources:
         return {"answer": "Je n'ai trouvé aucune source fiable pour répondre à cette question, donc je préfère ne pas deviner. Voulez-vous que nous vous aidions directement ?", "sources": [], "grounded": False}
+    _log(session, company_id, "ok", f"Question sur {label} : {question[:100]}", 1)
     return {"answer": text.strip()[:1500], "sources": sources[:5], "grounded": True}
 
 

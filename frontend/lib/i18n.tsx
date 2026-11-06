@@ -32,6 +32,7 @@ const DICT = {
   "nav.tasks": { fr: "Tâches", en: "Tasks" },
   "nav.activity": { fr: "Activité de l'entreprise", en: "Company activity" },
   "nav.ai_group": { fr: "IA", en: "AI" },
+  "nav.agents": { fr: "Agents IA", en: "AI agents" },
   "nav.ask_ai": { fr: "Demander à l'IA", en: "Ask AI" },
   "nav.configure_company": { fr: "Configurer l'entreprise", en: "Configure company" },
   "nav.configuration": { fr: "Configuration", en: "Settings" },

@@ -198,3 +198,44 @@ def test_watch_topics_are_saved_and_given_to_the_veilleur(client, monkeypatch):
     # changing the autonomy settings keeps the topics
     client.put("/agents/settings", headers=headers, json={"enabled": True, "autonomy": {"task": "auto"}})
     assert client.get("/agents/overview", headers=headers).json()["settings"]["watch_topics"] == ["oemstrade.com : prix", "Salon Electronica Munich"]
+
+
+def test_agents_overview_shows_models_runs_and_model_requests(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "openrouter_api_key", "o")
+    monkeypatch.setattr(perplexity, "ask", lambda system, user, **kw: ('[{"category": "événement", "title": "Electronica Munich", "summary": "Salon.", "why_it_matters": "Fournisseurs.", "date": null}]', ["https://s.example/e"]))
+    headers = _director(client)
+    ask = client.post("/agents/veilleur/ask", headers=headers, json={"request": "Salon Electronica Munich : exposants", "follow": True})
+    assert ask.status_code == 200 and ask.json()["status"] == "ok" and ask.json()["found"][0]["title"] == "Electronica Munich"
+    overview = client.get("/agents/overview", headers=headers).json()
+    agents = {a["key"]: a for a in overview["agents"]}
+    assert set(agents) == {"veilleur", "analyste", "guide"}
+    assert agents["veilleur"]["model"]["provider"] == "OpenRouter" and agents["analyste"]["model"]["kind"] == "rules"
+    assert agents["veilleur"]["recent_runs"][0]["message"].startswith("1 résultat")
+    assert overview["settings"]["watch_topics"] == ["Salon Electronica Munich : exposants"]
+    req = client.post("/agents/model-requests", headers=headers, json={"agent": "veilleur", "wanted": "Perplexity Sonar Pro", "reason": "résultats trop légers"})
+    assert req.status_code == 201 and req.json()["status"] == "requested"
+    assert client.get("/agents/overview", headers=headers).json()["model_requests"][0]["wanted"] == "Perplexity Sonar Pro"
+    assert client.post("/agents/model-requests", headers=headers, json={"agent": "nope", "wanted": "x1"}).status_code == 404
+
+
+def test_the_assistant_redirects_web_requests_to_the_veilleur(client):
+    headers = _director(client)
+    res = client.post("/ai/ask", headers=headers, json={"question": "Surveille oemstrade.com et le salon Electronica à Munich"})
+    assert res.status_code == 200 and "Veilleur" in res.json()["answer"] and res.json()["agent"] == "assistant"
+
+
+def test_usage_is_booked_per_agent_and_priced(client):
+    from app.agents import perplexity, service
+
+    headers = _director(client)
+
+    perplexity.drain_usage()
+    perplexity._record("perplexity/sonar", {"prompt_tokens": 1000, "completion_tokens": 500})
+    perplexity._record("perplexity/sonar", {"prompt_tokens": 100, "completion_tokens": 100, "cost": 0.01})
+    entries = perplexity.drain_usage()
+    assert len(entries) == 2 and perplexity.drain_usage() == []
+    assert abs(service._cost(entries[0]) - (0.0015 + 0.005)) < 1e-9
+    assert service._cost(entries[1]) == 0.01
+    overview = client.get("/agents/overview", headers=headers).json()
+    assert overview["usage"]["total"]["tokens"] == 0
+    assert overview["usage"]["catalog"][0]["model"] == "gemini-3.5-flash-lite"

@@ -626,10 +626,21 @@ export type AgentProposal = {
   created_at: string;
   answer: string | null;
 };
+export type AgentsUsage = {
+  agents: Record<string, { calls: number; tokens_in: number; tokens_out: number; usd: number; models: { model: string; calls: number; tin: number; tout: number; usd: number }[] }>;
+  total: { calls: number; tokens: number; usd: number };
+  catalog: { model: string; label: string; usd_per_m_in: number; usd_per_m_out: number; usd_per_request: number }[];
+};
 export type AgentsOverview = {
   guide: { percent: number; steps: { title: string; why: string; href: string; weight: number }[] } | null;
   proposals: AgentProposal[];
-  agents: { key: string; label: string; description: string; configured: boolean; last_status: string | null; last_message: string | null; last_run_at: string | null }[];
+  agents: {
+    key: string; label: string; description: string; configured: boolean; last_status: string | null; last_message: string | null; last_run_at: string | null;
+    model: { provider: string | null; model: string | null; kind: string; note: string };
+    recent_runs?: { status: string; found: number; message: string | null; at: string }[];
+  }[];
+  usage?: AgentsUsage | null;
+  model_requests?: { id: string; agent: string; wanted: string; reason: string | null; status: string; at: string }[];
   settings: { enabled: boolean; autonomy: Record<string, "ask" | "auto">; watch_topics?: string[] } | null;
   cadence_hours: number;
 };

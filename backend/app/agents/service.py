@@ -95,6 +95,166 @@ def knowledge(session: Session, company_id: uuid.UUID) -> list[dict]:
     return list(config_service.get_configuration(session, company_id).get("agent_knowledge") or [])
 
 
+# --- which model does each agent use, and requests to change it ---------------
+
+AGENT_LABELS = {
+    "veilleur": "Veilleur",
+    "analyste": "Analyste",
+    "guide": "Guide de connexion",
+}
+
+
+def model_in_use(agent: str) -> dict:
+    """What really powers an agent today. The two web agents (Veilleur, Guide)
+    share the search provider; the Analyste is plain calculation on the
+    company's figures and uses no language model."""
+
+    from app.config import get_settings as app_settings
+
+    settings = app_settings()
+    if agent == "analyste":
+        return {"provider": "Calculs internes", "model": None, "kind": "rules", "note": "Aucun modèle de langage : règles et statistiques sur vos chiffres."}
+    if (settings.openrouter_api_key or "").strip():
+        return {"provider": "OpenRouter", "model": settings.openrouter_model, "kind": "web_search", "note": "Recherche web avec sources."}
+    if (settings.gemini_api_key or "").strip():
+        return {"provider": "Google Gemini", "model": settings.gemini_model, "kind": "web_search", "note": "Recherche web avec sources (Google Search)."}
+    if (settings.perplexity_api_key or "").strip():
+        return {"provider": "Perplexity", "model": settings.perplexity_model if "/" in (settings.perplexity_model or "") else "Agent API (fast)", "kind": "web_search", "note": "Recherche web avec sources."}
+    return {"provider": None, "model": None, "kind": "web_search", "note": "Aucune clé de recherche renseignée : cet agent ne peut pas chercher."}
+
+
+def model_requests(session: Session, company_id: uuid.UUID) -> list[dict]:
+    saved = config_service.get_configuration(session, company_id).get("agents") or {}
+    return list(saved.get("model_requests") or [])[-20:]
+
+
+def request_model_change(session: Session, company_id: uuid.UUID, agent: str, wanted: str, reason: str | None) -> dict:
+    """Recorded, never applied by itself: a model change is a decision on our
+    side (cost, contract, quality). The request is shown with its status."""
+
+    if agent not in AGENT_LABELS:
+        raise KeyError(agent)
+    entry = {
+        "id": uuid.uuid4().hex[:12], "agent": agent, "current": model_in_use(agent),
+        "wanted": " ".join(wanted.split())[:200], "reason": " ".join((reason or "").split())[:500] or None,
+        "status": "requested", "at": now().isoformat(),
+    }
+    context = BusinessContextService(session).get_or_create(company_id)
+    config = dict(context.configuration or {})
+    agents = dict(config.get("agents") or {})
+    agents["model_requests"] = [*(agents.get("model_requests") or []), entry][-20:]
+    config["agents"] = agents
+    context.configuration = config
+    session.commit()
+    return entry
+
+
+def recent_runs(session: Session, company_id: uuid.UUID, agent: str, limit: int = 5) -> list[dict]:
+    rows = session.query(AgentRun).filter_by(company_id=company_id, agent=agent).order_by(AgentRun.created_at.desc()).limit(limit).all()
+    return [{"status": r.status, "found": r.found, "message": r.message, "at": r.created_at.isoformat()} for r in rows]
+
+
+def log_run(session: Session, company_id: uuid.UUID, agent: str, status: str, message: str, found: int = 0) -> None:
+    session.add(AgentRun(company_id=company_id, agent=agent, status=status, found=found, message=message[:400], finished_at=now()))
+    session.commit()
+    _book_usage(session, company_id, agent, perplexity.drain_usage())
+
+
+# --- consumption: tokens and cost per agent --------------------------------------
+
+# Indicative public prices, USD per million tokens (input, output) and per
+# request for models that bill searches. The provider's own invoiced cost is
+# used whenever the answer carries it.
+PRICES = {
+    "perplexity/sonar": {"in": 1.0, "out": 1.0, "request": 0.005},
+    "perplexity/sonar-pro": {"in": 3.0, "out": 15.0, "request": 0.006},
+    "gemini-3.5-flash-lite": {"in": 0.10, "out": 0.40, "request": 0.0},
+}
+
+
+def model_catalog() -> list[dict]:
+    """Models a company can ask for, with indicative prices (cheapest first)."""
+
+    labels = {"perplexity/sonar": "Perplexity Sonar (économique)", "perplexity/sonar-pro": "Perplexity Sonar Pro (plus précis)", "gemini-3.5-flash-lite": "Google Gemini Flash-Lite (le moins cher)"}
+    rows = [{"model": m, "label": labels[m], "usd_per_m_in": p["in"], "usd_per_m_out": p["out"], "usd_per_request": p["request"]} for m, p in PRICES.items()]
+    return sorted(rows, key=lambda r: r["usd_per_m_in"] + r["usd_per_m_out"] + r["usd_per_request"] * 200)
+
+
+def _cost(entry: dict) -> float:
+    if entry.get("cost") is not None:
+        return float(entry["cost"])
+    price = PRICES.get(entry.get("model") or "")
+    if not price:
+        return 0.0
+    return (entry["tin"] * price["in"] + entry["tout"] * price["out"]) / 1_000_000 + price["request"]
+
+
+def _book_usage(session: Session, company_id: uuid.UUID, agent: str, entries: list[dict]) -> None:
+    if not entries:
+        return
+    context = BusinessContextService(session).get_or_create(company_id)
+    config = dict(context.configuration or {})
+    agents = dict(config.get("agents") or {})
+    usage = dict(agents.get("usage") or {})
+    mine = dict(usage.get(agent) or {})
+    by_model = dict(mine.get("by_model") or {})
+    for e in entries:
+        row = dict(by_model.get(e["model"]) or {"calls": 0, "tin": 0, "tout": 0, "usd": 0.0})
+        row["calls"] += 1
+        row["tin"] += e["tin"]
+        row["tout"] += e["tout"]
+        row["usd"] = round(row["usd"] + _cost(e), 6)
+        by_model[e["model"]] = row
+    mine["by_model"] = by_model
+    usage[agent] = mine
+    agents["usage"] = usage
+    config["agents"] = agents
+    context.configuration = config
+    session.commit()
+
+
+def usage_summary(session: Session, company_id: uuid.UUID) -> dict:
+    saved = (config_service.get_configuration(session, company_id).get("agents") or {}).get("usage") or {}
+    agents: dict[str, dict] = {}
+    for key in AGENT_LABELS:
+        models = [{"model": m, **row} for m, row in ((saved.get(key) or {}).get("by_model") or {}).items()]
+        agents[key] = {
+            "calls": sum(r["calls"] for r in models), "tokens_in": sum(r["tin"] for r in models), "tokens_out": sum(r["tout"] for r in models),
+            "usd": round(sum(r["usd"] for r in models), 4), "models": models,
+        }
+    return {
+        "agents": agents,
+        "total": {"calls": sum(a["calls"] for a in agents.values()), "tokens": sum(a["tokens_in"] + a["tokens_out"] for a in agents.values()), "usd": round(sum(a["usd"] for a in agents.values()), 4)},
+        "catalog": model_catalog(),
+    }
+
+
+def ask_veilleur(session: Session, company: Company, request: str, follow: bool) -> dict:
+    """A direct request to the Veilleur: search this subject now, return what
+    was found, and (optionally) keep following it."""
+
+    if not perplexity.configured():
+        log_run(session, company.id, "veilleur", "not_configured", f"Demande : {request[:120]} : aucune clé de recherche.")
+        return {"status": "not_configured", "found": [], "message": "Aucune clé de recherche web n'est renseignée : le Veilleur ne peut pas chercher."}
+    if follow:
+        set_watch_topics(session, company.id, [*get_settings(session, company.id)["watch_topics"], request])
+    config = config_service.get_configuration(session, company.id)
+    profile = veilleur.profile_text(company.name, company.website_url, config_service.ai_profile(config), knowledge(session, company.id))
+    try:
+        results = veilleur.scan_topics(profile, [request], date.today())
+    except perplexity.PerplexityError as exc:
+        log_run(session, company.id, "veilleur", "error", f"Demande : {request[:120]} : {str(exc)[:200]}")
+        return {"status": "error", "found": [], "message": str(exc)[:300]}
+    shown = []
+    for item, sources in results:
+        _ingest(session, company, item, sources)
+        shown.append({"title": str(item.get("title"))[:255], "summary": str(item.get("summary") or "")[:600], "why": str(item.get("why_it_matters") or "")[:400], "sources": sources[:5]})
+    message = f"{len(shown)} résultat(s) pour : {request[:120]}" if shown else f"Rien de fiable trouvé pour : {request[:120]}"
+    session.commit()
+    log_run(session, company.id, "veilleur", "ok", message, len(shown))
+    return {"status": "ok", "found": shown, "message": message}
+
+
 # --- running agents -----------------------------------------------------------
 
 def cadence_hours(at: datetime | None = None) -> int:

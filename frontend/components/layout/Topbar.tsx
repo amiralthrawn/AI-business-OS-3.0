@@ -29,6 +29,7 @@ const TITLE_KEYS: Record<string, LabelKey> = {
   "/actions/tasks": "nav.tasks",
   "/actions/activity": "nav.activity",
   "/ai/ask-ai": "nav.ask_ai",
+  "/agents": "nav.agents",
   "/settings": "nav.configuration",
 };
 

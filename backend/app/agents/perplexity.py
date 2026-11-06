@@ -5,6 +5,7 @@ Two providers behind one `ask()`: Google Gemini with Google Search grounding
 keeps its historical name so the agents and the tests did not have to change."""
 
 import re
+from contextvars import ContextVar
 
 import httpx
 
@@ -15,6 +16,34 @@ URL = "https://api.perplexity.ai/v1/agent"
 
 class PerplexityError(RuntimeError):
     pass
+
+
+# Tokens spent by the calls of the current request/job. `log_run` drains it and
+# books the total on the agent that made the calls.
+_USAGE: ContextVar[list | None] = ContextVar("agent_usage", default=None)
+
+
+def _record(model: str, usage: object) -> None:
+    if not isinstance(usage, dict):
+        return
+    def num(*keys: str) -> int:
+        for k in keys:
+            if isinstance(usage.get(k), (int, float)):
+                return int(usage[k])
+        return 0
+    cost = usage.get("cost")
+    entry = {"model": model, "tin": num("prompt_tokens", "input_tokens", "total_input_tokens"), "tout": num("completion_tokens", "output_tokens", "total_output_tokens"), "cost": float(cost) if isinstance(cost, (int, float)) else None}
+    bucket = _USAGE.get()
+    if bucket is None:
+        bucket = []
+        _USAGE.set(bucket)
+    bucket.append(entry)
+
+
+def drain_usage() -> list[dict]:
+    bucket = _USAGE.get() or []
+    _USAGE.set([])
+    return bucket
 
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
@@ -66,6 +95,7 @@ def _ask_openrouter(system: str, user: str, timeout: float) -> tuple[str, list[s
         text = message.get("content") or ""
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise PerplexityError("Unexpected OpenRouter answer") from exc
+    _record(settings.openrouter_model, data.get("usage"))
     urls: list[str] = [c for c in (data.get("citations") or message.get("citations") or []) if isinstance(c, str)]
     for ann in message.get("annotations") or []:
         if isinstance(ann, dict):
@@ -95,6 +125,7 @@ def _ask_gemini(system: str, user: str, timeout: float) -> tuple[str, list[str]]
         data = res.json()
     except ValueError as exc:
         raise PerplexityError("Unexpected Gemini answer") from exc
+    _record(settings.gemini_model, data.get("usage") or data.get("usage_metadata") if isinstance(data, dict) else None)
     # keep only the model's output, not the search-call/result steps
     steps = data.get("steps") if isinstance(data, dict) else None
     outputs = [st for st in steps if isinstance(st, dict) and st.get("type") == "model_output"] if isinstance(steps, list) else [data]
@@ -145,6 +176,10 @@ def ask(system: str, user: str, *, timeout: float = 90.0) -> tuple[str, list[str
         res = _post({k: v for k, v in body.items() if k != "tools"}, timeout)
     if res.status_code != 200:
         raise PerplexityError(f"Perplexity answered {res.status_code}: {res.text[:900]}")
+    try:
+        _record(model if "/" in model else "perplexity-agent-fast", res.json().get("usage"))
+    except (AttributeError, ValueError):
+        pass
     try:
         output = res.json()["output"]
     except (KeyError, TypeError, ValueError) as exc:

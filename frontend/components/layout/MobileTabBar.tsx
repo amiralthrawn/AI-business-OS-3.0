@@ -16,6 +16,7 @@ const TABS: Tab[] = [
   { href: "/data", label: "nav.data_group", permission: "", match: DATA_MATCH, icon: <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6" /><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" /></svg> },
   { href: "/calendar", label: "nav.calendar", permission: "", match: ["/calendar"], icon: <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><rect x="4" y="5.5" width="16" height="14" rx="2" /><path d="M8 3.5v4M16 3.5v4M4 10h16" /></svg> },
   { href: "/ai/ask-ai", label: "nav.ask_ai", permission: "action:ask_ai", match: ["/ai"], icon: <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v7a2.5 2.5 0 0 1-2.5 2.5H11l-4 3.5V16h-.5A1.5 1.5 0 0 1 5 14.5Z" /></svg> },
+  { href: "/agents", label: "nav.agents", permission: "", match: ["/agents"], icon: <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><rect x="5" y="8" width="14" height="10" rx="3" /><path d="M12 8V5M9.5 12.5h.01M14.5 12.5h.01M9.5 15.5h5" /></svg> },
 ];
 
 export default function MobileTabBar({ permissions }: { permissions: string[] | null }) {

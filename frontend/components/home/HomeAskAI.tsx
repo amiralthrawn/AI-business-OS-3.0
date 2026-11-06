@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import TaskActionButtons from "@/components/actions/TaskActionButtons";
 import Button from "@/components/ui/Button";
@@ -48,6 +49,10 @@ export default function HomeAskAI() {
         </Button>
       </form>
 
+      <p className="text-[12px] text-text-faint">
+        Pour une recherche sur le web ou un sujet à suivre (un site, un concurrent, un salon), parlez directement à un{" "}
+        <Link href="/agents" className="font-semibold text-accent-strong hover:underline">agent IA</Link>.
+      </p>
       {error && <p className="text-[12.5px] text-danger">{error}</p>}
 
       {result && (

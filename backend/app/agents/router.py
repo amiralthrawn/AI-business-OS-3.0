@@ -14,8 +14,9 @@ from app.database import get_db
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 LABELS = {
-    "veilleur": ("Veilleur", "Cherche en continu sur le web tout ce qui peut compter pour l'entreprise (Perplexity)."),
+    "veilleur": ("Veilleur", "Cherche en continu sur le web tout ce qui peut compter pour l'entreprise : salons, prix, concurrents, réglementation, votre réputation."),
     "analyste": ("Analyste", "Lit vos chiffres et vos échanges pour repérer risques et opportunités."),
+    "guide": ("Guide de connexion", "Cherche pour chaque outil comment en sortir les données, vous guide pas à pas et propose la suite."),
 }
 
 
@@ -27,6 +28,17 @@ class SettingsIn(BaseModel):
 class TopicsIn(BaseModel):
     topics: list[str] = Field(default_factory=list, max_length=12)
     run: bool = False
+
+
+class ModelRequestIn(BaseModel):
+    agent: str
+    wanted: str = Field(min_length=2, max_length=200)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class VeilleurAskIn(BaseModel):
+    request: str = Field(min_length=3, max_length=500)
+    follow: bool = False
 
 
 class AnswerIn(BaseModel):
@@ -67,9 +79,10 @@ def overview(db: Session = Depends(get_db), user: CurrentUser = Depends(get_curr
     agents = []
     for key, (label, description) in LABELS.items():
         run = service.last_run(db, company.id, key)
-        configured = perplexity.configured() if key == "veilleur" else True
+        configured = perplexity.configured() if key in ("veilleur", "guide") else True
         agents.append({
             "key": key, "label": label, "description": description, "configured": configured,
+            "model": service.model_in_use(key), "recent_runs": service.recent_runs(db, company.id, key),
             "last_status": run.status if run else None, "last_message": run.message if run else None,
             "last_run_at": run.created_at.isoformat() if run else None,
         })
@@ -79,6 +92,8 @@ def overview(db: Session = Depends(get_db), user: CurrentUser = Depends(get_curr
         "agents": agents if is_director else [],
         "settings": service.get_settings(db, company.id) if is_director else None,
         "cadence_hours": service.cadence_hours(),
+        "model_requests": service.model_requests(db, company.id) if is_director else [],
+        "usage": service.usage_summary(db, company.id) if is_director else None,
     }
 
 
@@ -99,6 +114,19 @@ def put_watch_topics(payload: TopicsIn, db: Session = Depends(get_db), _user: Cu
         run = service.run_veilleur(db, company)
         result = {"status": run.status, "found": run.found, "message": run.message}
     return {"topics": topics, "run": result}
+
+
+@router.post("/model-requests", status_code=201)
+def post_model_request(payload: ModelRequestIn, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    try:
+        return service.request_model_change(db, _company(db).id, payload.agent, payload.wanted, payload.reason)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=tx("Agent inconnu", "Unknown agent")) from exc
+
+
+@router.post("/veilleur/ask")
+def ask_veilleur(payload: VeilleurAskIn, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    return service.ask_veilleur(db, _company(db), payload.request.strip(), payload.follow)
 
 
 @router.post("/{agent}/run")

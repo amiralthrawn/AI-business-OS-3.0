@@ -110,6 +110,13 @@ def parse_date(value) -> datetime | None:
     return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
 
 
+def scan_topics(profile: str, topics: list[str], today: date) -> list[tuple[dict, list[str]]]:
+    """Only the subjects the company named (a direct request). Raises perplexity.PerplexityError."""
+
+    text, sources = perplexity.ask(SYSTEM, topics_prompt(profile, topics[:12], today))
+    return [(item, sources) for item in parse_items(text)]
+
+
 def scan(profile: str, company_name: str, today: date, topics: list[str] | None = None) -> list[tuple[dict, list[str]]]:
     """Returns [(item, source_urls)]. Raises perplexity.PerplexityError."""
 
