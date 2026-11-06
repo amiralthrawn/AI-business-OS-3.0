@@ -1,3 +1,4 @@
+import ListPager, { matches, pageOf, paginate } from "@/components/ui/ListPager";
 import Link from "next/link";
 import EntityListItem from "@/components/data/EntityListItem";
 import TransactionRow from "@/components/data/TransactionRow";
@@ -33,8 +34,8 @@ const TABS = [
 // Sales workspace (V2): one entry in the navigation, the sales objects as
 // sub-tabs. Each document/customer opens its own page, where everything
 // related is one click away (brain/navigation_v2.md).
-export default async function SalesPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const { tab = "overview" } = await searchParams;
+export default async function SalesPage({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string; p?: string }> }) {
+  const { tab = "overview", q = "", p } = await searchParams;
   const active = TABS.some((t) => t.key === tab) ? tab : "overview";
   const [me, followUps] = await Promise.all([getMe().catch(() => null), getFollowUps().catch(() => null)]);
   const salesFollowUps = followUps?.items.filter((i) => i.object.domain !== "procurement") ?? [];
@@ -64,7 +65,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       {active === "quotes" && <DocumentList documents={await listDocuments({ kind: ["customer_quote"] })} empty="Aucun devis." showKind={false} />}
       {active === "orders" && <Orders />}
       {active === "followups" && followUps && <FollowUpList items={salesFollowUps} note={followUps.note} canDraft={can(me?.permissions, "write:communications")} />}
-      {active === "customers" && <Customers />}
+      {active === "customers" && <Customers q={q} page={pageOf(p)} />}
     </main>
   );
 }
@@ -92,15 +93,18 @@ async function Orders() {
   );
 }
 
-async function Customers() {
-  const customers = await getCustomers().catch(() => []);
+async function Customers({ q, page }: { q: string; page: number }) {
+  const all = await getCustomers().catch(() => []);
+  const found = all.filter((c) => matches(q, c.name, c.country));
+  const customers = paginate(found, page);
   const deals = await listDocuments({ kind: ["customer_request"], open_only: true }).catch(() => []);
   const prospects = deals.filter((d) => d.party?.status === "prospect");
   return (
     <div className="space-y-8">
+      {all.length > 0 && <ListPager basePath="/business/sales" params={{ tab: "customers" }} q={q} page={page} total={found.length} placeholder="Chercher un client ou un prospect…" />}
       <ul className="space-y-3">
         {customers.length === 0 ? (
-          <EmptyState message="Aucun client pour l'instant." />
+          <EmptyState message={all.length === 0 ? "Aucun client pour l'instant." : "Aucun client ne correspond à cette recherche."} />
         ) : (
           customers.map((c) => (
             <li key={c.id}>

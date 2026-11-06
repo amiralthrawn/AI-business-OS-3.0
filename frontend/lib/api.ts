@@ -440,6 +440,20 @@ export const addCostItem = (id: string, payload: { kind: string; amount_min: num
 
 // Catalog, suppliers, stock
 export const getCatalogProducts = () => getJSON<CatalogProduct[]>("/catalog/products", "Catalogue introuvable");
+async function getPage<T>(path: string, notFoundMessage: string): Promise<{ items: T[]; total: number }> {
+  const res = await apiFetch(`${API_URL}${path}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(res.status === 404 ? notFoundMessage : `La requête a échoué (${res.status})`);
+  const items = (await res.json()) as T[];
+  return { items, total: Number(res.headers.get("X-Total-Count") ?? items.length) };
+}
+export const getCatalogProductsPage = (opts: { q?: string; page?: number; size?: number }) => {
+  const size = opts.size ?? 50;
+  return getPage<CatalogProduct>(`/catalog/products${query({ q: opts.q || undefined, limit: size, offset: ((opts.page ?? 1) - 1) * size })}`, "Catalogue introuvable");
+};
+export const getStockPage = (opts: { kind: "physical" | "supplier" | "potential"; q?: string; page?: number; size?: number }) => {
+  const size = opts.size ?? 50;
+  return getPage<StockRow>(`/catalog/stock${query({ kind: opts.kind, q: opts.q || undefined, limit: size, offset: ((opts.page ?? 1) - 1) * size })}`, "Stock introuvable");
+};
 export const getCatalogProduct = (id: string) => getJSON<CatalogProduct>(`/catalog/products/${id}`, "Produit introuvable");
 export const createCatalogProduct = (payload: { name: string; sku?: string; sale_price?: number; unit_cost?: number; brand?: string }) =>
   sendJSON<CatalogProduct>("POST", "/catalog/products", payload, "Impossible de créer le produit");
@@ -616,7 +630,7 @@ export type AgentsOverview = {
   guide: { percent: number; steps: { title: string; why: string; href: string; weight: number }[] } | null;
   proposals: AgentProposal[];
   agents: { key: string; label: string; description: string; configured: boolean; last_status: string | null; last_message: string | null; last_run_at: string | null }[];
-  settings: { enabled: boolean; autonomy: Record<string, "ask" | "auto"> } | null;
+  settings: { enabled: boolean; autonomy: Record<string, "ask" | "auto">; watch_topics?: string[] } | null;
   cadence_hours: number;
 };
 

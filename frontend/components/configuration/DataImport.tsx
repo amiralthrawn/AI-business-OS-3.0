@@ -46,7 +46,7 @@ export default function DataImport({ refreshKey = 0, documentsOnly = false }: { 
 
   async function upload(files: FileList | File[]) {
     setBusy(true);
-    const done: Outcome[] = [];
+    const done: Outcome[] = [...outcomes];
     for (const file of Array.from(files)) {
       try {
         done.push({ file: file.name, result: await importAuto(file) });
@@ -72,6 +72,7 @@ export default function DataImport({ refreshKey = 0, documentsOnly = false }: { 
   if (!plan) return <p className="text-[13px] text-text-faint">Chargement…</p>;
 
   const fec = plan.fec_summary;
+  const deposited = [...plan.imports].reverse();
 
   return (
     <div className="space-y-6">
@@ -113,28 +114,33 @@ export default function DataImport({ refreshKey = 0, documentsOnly = false }: { 
         </button>
       </div>
 
-      {outcomes.length > 0 && (
+      <p className={`text-[14px] font-semibold ${deposited.length ? "text-success" : "text-text-faint"}`} aria-live="polite">
+        {deposited.length === 0 ? "Aucun document déposé" : deposited.length === 1 ? "1 document déposé" : `${deposited.length} documents déposés`}
+      </p>
+
+      {(outcomes.some((o) => o.error) || deposited.length > 0) && (
         <ul className="space-y-2">
-          {outcomes.map((o, i) => (
-            <li key={`${o.file}-${i}`} className="rounded-xl border border-border px-4 py-3 text-[13px]">
+          {outcomes.filter((o) => o.error).map((o, i) => (
+            <li key={`err-${o.file}-${i}`} className="rounded-xl border border-danger/40 bg-danger-soft px-4 py-3 text-[13px]">
               <span className="font-semibold text-text">{o.file}</span>
-              {o.error && <span className="ml-2 text-danger">{o.error}</span>}
-              {o.result && (
-                <span className="ml-2 text-text-soft">
-                  reconnu comme {KIND_LABEL[o.result.kind]} ·{" "}
-                  <span className="font-semibold text-success">
-                    {o.result.created} ajouté{o.result.created > 1 ? "s" : ""}
-                  </span>
-                  {o.result.updated > 0 && ` · ${o.result.updated} mis à jour`}
-                  {o.result.skipped > 0 && ` · ${o.result.skipped} ignoré${o.result.skipped > 1 ? "s" : ""}`}
-                  {o.result.summary && ` · chiffre d'affaires lu : ${fmt(o.result.summary.revenue)} €`}
+              <span className="mt-0.5 block text-danger sm:ml-2 sm:inline">{o.error}</span>
+            </li>
+          ))}
+          {deposited.map((d, i) => (
+            <li key={`${d.file}-${d.at}-${i}`} className="rounded-xl border border-border px-4 py-3 text-[13px]">
+              <span className="break-all font-semibold text-text">{d.file}</span>
+              <span className="mt-0.5 block text-text-soft sm:ml-2 sm:inline">
+                {KIND_LABEL[d.kind] ?? d.kind} ·{" "}
+                <span className="font-semibold text-success">
+                  {fmt(d.created)} ajouté{d.created > 1 ? "s" : ""}
                 </span>
-              )}
+                {d.updated > 0 && ` · ${fmt(d.updated)} mis à jour`}
+                {d.skipped > 0 && ` · ${fmt(d.skipped)} ignoré${d.skipped > 1 ? "s" : ""}`}
+              </span>
             </li>
           ))}
         </ul>
       )}
-
       {fec && (
         <p className="text-[12.5px] text-text-soft">
           Dernière comptabilité lue : {fec.customers_found} clients et {fec.suppliers_found} fournisseurs, du {fec.from ?? "?"} au {fec.to ?? "?"}.

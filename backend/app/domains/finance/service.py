@@ -34,7 +34,11 @@ def get_finance_overview(session: Session, company_id: uuid.UUID | None) -> dict
 
     financials = compute_company_financials(session, company_id)
 
-    products = session.query(Product).filter_by(company_id=company_id).order_by(Product.name).all()
+    # only products that have at least one sales order can show a margin: one
+    # query picks them, instead of computing a trend for every reference
+    selling = {pid for (pid,) in session.query(Transaction.product_id).filter(
+        Transaction.company_id == company_id, Transaction.type == TransactionType.SALES_ORDER, Transaction.product_id.isnot(None)).distinct()}
+    products = session.query(Product).filter(Product.company_id == company_id, Product.id.in_(selling)).order_by(Product.name).all() if selling else []
     product_margins = []
     for product in products:
         trend = compute_margin_trend(session, product.id)

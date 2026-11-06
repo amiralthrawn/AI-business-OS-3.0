@@ -7,7 +7,8 @@ import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import PageHeader from "@/components/ui/PageHeader";
-import { getCatalogProducts, getMe, getStock } from "@/lib/api";
+import ListPager, { pageOf } from "@/components/ui/ListPager";
+import { getCatalogProductsPage, getMe, getStockPage } from "@/lib/api";
 import { can, fmtDate, fmtMoney, fmtNumber } from "@/lib/objects";
 import type { CatalogProduct, StockRow } from "@/lib/types";
 
@@ -22,8 +23,9 @@ const STOCK_KINDS: { kind: StockRow["kind"]; label: string; hint: string }[] = [
 // Catalogue & stock (V2): the product is the central object -- its suppliers
 // and their terms, its stock, its documents are on the product page; this
 // workspace lists products and the three kinds of stock side by side (never summed).
-export default async function CatalogPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const { tab = "products" } = await searchParams;
+export default async function CatalogPage({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string; p?: string }> }) {
+  const { tab = "products", q = "", p } = await searchParams;
+  const page = pageOf(p);
   const active = tab === "stock" ? "stock" : "products";
   const me = await getMe().catch(() => null);
 
@@ -37,20 +39,23 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
           { key: "stock", label: "Stock", href: "/data/products?tab=stock" },
         ]}
       />
-      {active === "products" ? <Products /> : <Stock canImport={can(me?.permissions, "write:catalog")} />}
+      {active === "products" ? <Products q={q} page={page} /> : <Stock canImport={can(me?.permissions, "write:catalog")} q={q} />}
     </main>
   );
 }
 
-async function Products() {
+async function Products({ q, page }: { q: string; page: number }) {
   let products: CatalogProduct[] = [];
+  let total = 0;
   try {
-    products = await getCatalogProducts();
+    ({ items: products, total } = await getCatalogProductsPage({ q, page }));
   } catch (err) {
     return <ErrorBanner message={err instanceof Error ? err.message : "Impossible de charger le catalogue."} />;
   }
-  if (products.length === 0) return <EmptyState message="Aucun produit pour l'instant." />;
+  if (total === 0 && !q) return <EmptyState message="Aucun produit pour l'instant." />;
   return (
+    <div className="space-y-4">
+    <ListPager basePath="/data/products" params={{}} q={q} page={page} total={total} placeholder="Chercher une référence, un nom, un fabricant…" />
     <ul className="space-y-2">
       {products.map((p) => {
         const physical = p.stock.physical.reduce((sum, s) => sum + s.quantity, 0);
@@ -71,18 +76,21 @@ async function Products() {
         );
       })}
     </ul>
+    </div>
   );
 }
 
-async function Stock({ canImport }: { canImport: boolean }) {
-  const rows = await getStock().catch(() => [] as StockRow[]);
+async function Stock({ canImport, q }: { canImport: boolean; q: string }) {
+  const pages = await Promise.all(STOCK_KINDS.map(({ kind }) => getStockPage({ kind, q, size: 25 }).catch(() => ({ items: [] as StockRow[], total: 0 }))));
   return (
     <div className="space-y-8">
-      {STOCK_KINDS.map(({ kind, label, hint }) => {
-        const items = rows.filter((r) => r.kind === kind);
+      <ListPager basePath="/data/products" params={{ tab: "stock" }} q={q} page={1} total={pages.reduce((n, p) => n + p.total, 0)} size={1000000} placeholder="Chercher une référence ou un produit en stock…" />
+      {STOCK_KINDS.map(({ kind, label, hint }, index) => {
+        const items = pages[index].items;
+        const total = pages[index].total;
         return (
           <section key={kind}>
-            <SectionLabel>{label}</SectionLabel>
+            <SectionLabel>{label}{total > 0 ? ` (${new Intl.NumberFormat("fr-FR").format(total)})` : ""}</SectionLabel>
             <p className="-mt-2 mb-3 text-[12px] text-text-faint">{hint}</p>
             {items.length === 0 ? (
               <EmptyState message="Aucune position." />
@@ -112,6 +120,7 @@ async function Stock({ canImport }: { canImport: boolean }) {
                 </table>
               </Card>
             )}
+            {total > items.length && <p className="mt-2 text-[12px] text-text-faint">{items.length} premières positions affichées sur {new Intl.NumberFormat("fr-FR").format(total)} : utilisez la recherche pour trouver une référence précise.</p>}
           </section>
         );
       })}

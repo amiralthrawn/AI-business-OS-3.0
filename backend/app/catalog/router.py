@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.i18n import tx
@@ -102,13 +103,26 @@ def _product_out(db: Session, p: Product) -> dict:
     }  # fmt: skip
 
 
-@router.get("/catalog/products")
-def catalog_products(db: Session = Depends(get_db), company: Company = Depends(current_company)) -> list[dict]:
-    """Product list with the V2 catalog fields (suppliers, stock). V1's
-    `GET /products` stays as-is for its own consumers."""
+def _like(text: str) -> str:
+    return "%" + text.strip().lower().replace("%", "").replace("_", "") + "%"
 
-    products = db.query(Product).filter_by(company_id=company.id).order_by(Product.name).all()
-    return [_product_out(db, p) for p in products]
+
+@router.get("/catalog/products")
+def catalog_products(
+    response: Response, limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0), q: str | None = None,
+    db: Session = Depends(get_db), company: Company = Depends(current_company),
+) -> list[dict]:
+    """Product list with the V2 catalog fields (suppliers, stock), one page at
+    a time (a real catalogue has thousands of references). `q` searches the
+    name, reference and manufacturer; the total is in the X-Total-Count header.
+    V1's `GET /products` stays as-is for its own consumers."""
+
+    query = db.query(Product).filter_by(company_id=company.id)
+    if q and q.strip():
+        pattern = _like(q)
+        query = query.filter(or_(func.lower(Product.name).like(pattern), func.lower(Product.sku).like(pattern), func.lower(Product.manufacturer).like(pattern)))
+    response.headers["X-Total-Count"] = str(query.count())
+    return [_product_out(db, p) for p in query.order_by(Product.name).offset(offset).limit(limit).all()]
 
 
 @router.get("/catalog/products/{product_id}")
@@ -160,12 +174,19 @@ def product_benchmark(
 
 
 @router.get("/catalog/stock")
-def stock_overview(kind: StockKind | None = None, db: Session = Depends(get_db), company: Company = Depends(current_company)) -> list[dict]:
+def stock_overview(
+    response: Response, kind: StockKind | None = None, limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0), q: str | None = None,
+    db: Session = Depends(get_db), company: Company = Depends(current_company),
+) -> list[dict]:
     query = db.query(StockPosition).filter_by(company_id=company.id)
     if kind is not None:
         query = query.filter_by(kind=kind)
+    if q and q.strip():
+        pattern = _like(q)
+        query = query.join(Product, Product.id == StockPosition.product_id).filter(or_(func.lower(Product.name).like(pattern), func.lower(Product.sku).like(pattern)))
+    response.headers["X-Total-Count"] = str(query.count())
     rows = []
-    for p in query.order_by(StockPosition.as_of.desc()).all():
+    for p in query.order_by(StockPosition.as_of.desc(), StockPosition.id).offset(offset).limit(limit).all():
         product = db.get(Product, p.product_id)
         supplier = db.get(Supplier, p.supplier_id) if p.supplier_id else None
         rows.append(

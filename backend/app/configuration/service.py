@@ -113,7 +113,7 @@ def record_import(session: Session, company_id: uuid.UUID, tool_key: str | None,
     context = BusinessContextService(session).get_or_create(company_id)
     config = dict(context.configuration or {})
     entry = {**entry, "at": datetime.now(timezone.utc).isoformat()}
-    config["imports"] = [*(config.get("imports") or []), entry][-50:]
+    config["imports"] = [*(config.get("imports") or []), entry][-200:]
     if tool_key and tools.is_known_tool(tool_key):
         configured = dict(config.get("tools") or {})
         state = dict(configured.get(tool_key) or {})

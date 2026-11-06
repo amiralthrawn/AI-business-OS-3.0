@@ -11,6 +11,7 @@ existed.
 import uuid
 from collections import defaultdict
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.analytics import (
@@ -54,16 +55,26 @@ def _transaction_dict(t: Transaction) -> dict:
     }
 
 
+def _counts(session: Session, column, company_id: uuid.UUID) -> dict:
+    """{id: number of transactions} in ONE grouped query, instead of loading
+    every entity's relationship one by one (thousands of queries on a real file)."""
+
+    rows = session.query(column, func.count(Transaction.id)).filter(Transaction.company_id == company_id, column.isnot(None)).group_by(column).all()
+    return {key: n for key, n in rows}
+
+
 def list_suppliers(session: Session, company_id: uuid.UUID) -> list[dict]:
     intelligence = _intelligence_by_entity(session, company_id)
     suppliers = session.query(Supplier).filter_by(company_id=company_id).order_by(Supplier.name).all()
+    product_counts = dict(session.query(Product.supplier_id, func.count(Product.id)).filter(Product.company_id == company_id, Product.supplier_id.isnot(None)).group_by(Product.supplier_id).all())
+    transaction_counts = _counts(session, Transaction.supplier_id, company_id)
     return [
         {
             "id": s.id,
             "name": s.name,
             "country": s.country,
-            "product_count": len(s.products),
-            "transaction_count": len(s.transactions),
+            "product_count": product_counts.get(s.id, 0),
+            "transaction_count": transaction_counts.get(s.id, 0),
             "signal_count": len(intelligence.get((RelatedEntityType.SUPPLIER, s.id), [])),
             "top_signal": (intelligence.get((RelatedEntityType.SUPPLIER, s.id)) or [None])[0],
         }
@@ -95,16 +106,19 @@ def get_supplier_detail(session: Session, company_id: uuid.UUID, supplier_id: uu
 def list_customers(session: Session, company_id: uuid.UUID) -> list[dict]:
     intelligence = _intelligence_by_entity(session, company_id)
     customers = session.query(Customer).filter_by(company_id=company_id).order_by(Customer.name).all()
+    transaction_counts = _counts(session, Transaction.customer_id, company_id)
     items = []
     for c in customers:
-        trend = compute_customer_value_trend(session, c.id)
+        count = transaction_counts.get(c.id, 0)
+        # a prospect or a customer without any transaction has no trend to compute
+        recent_revenue = compute_customer_value_trend(session, c.id).recent_revenue if count else None
         items.append(
             {
                 "id": c.id,
                 "name": c.name,
                 "country": c.country,
-                "transaction_count": len(c.transactions),
-                "recent_revenue": trend.recent_revenue,
+                "transaction_count": count,
+                "recent_revenue": recent_revenue,
                 "signal_count": len(intelligence.get((RelatedEntityType.CUSTOMER, c.id), [])),
                 "top_signal": (intelligence.get((RelatedEntityType.CUSTOMER, c.id)) or [None])[0],
             }
@@ -137,14 +151,16 @@ def get_customer_detail(session: Session, company_id: uuid.UUID, customer_id: uu
 def list_products(session: Session, company_id: uuid.UUID) -> list[dict]:
     intelligence = _intelligence_by_entity(session, company_id)
     products = session.query(Product).filter_by(company_id=company_id).order_by(Product.name).all()
+    transaction_counts = _counts(session, Transaction.product_id, company_id)
+    suppliers = {sp.id: sp for sp in session.query(Supplier).filter_by(company_id=company_id).all()}
     return [
         {
             "id": p.id,
             "name": p.name,
             "sku": p.sku,
             "unit_cost": p.unit_cost,
-            "supplier": {"id": p.supplier.id, "name": p.supplier.name} if p.supplier is not None else None,
-            "transaction_count": len(p.transactions),
+            "supplier": {"id": suppliers[p.supplier_id].id, "name": suppliers[p.supplier_id].name} if p.supplier_id in suppliers else None,
+            "transaction_count": transaction_counts.get(p.id, 0),
             "signal_count": len(intelligence.get((RelatedEntityType.PRODUCT, p.id), [])),
         }
         for p in products
@@ -172,26 +188,18 @@ def get_product_detail(session: Session, company_id: uuid.UUID, product_id: uuid
 
 def list_contacts(session: Session, company_id: uuid.UUID) -> list[dict]:
     contacts = session.query(Contact).filter_by(company_id=company_id).order_by(Contact.name).all()
+    names: dict = {}
+    for model in (Supplier, Customer):
+        names.update({row.id: row.name for row in session.query(model.id, model.name).filter(model.company_id == company_id).all()})
+    # last communication per linked entity, in one query
+    last_by_entity: dict = {}
+    for comm in session.query(Communication).filter(Communication.related_entity_id.isnot(None)).order_by(Communication.occurred_at.asc()).all():
+        last_by_entity[(comm.related_entity_type, comm.related_entity_id)] = comm
 
-    related_name: str | None
     items = []
     for c in contacts:
-        related_name = None
-        if c.related_entity_type == RelatedEntityType.SUPPLIER and c.related_entity_id is not None:
-            entity = session.query(Supplier).filter_by(id=c.related_entity_id).first()
-            related_name = entity.name if entity is not None else None
-        elif c.related_entity_type == RelatedEntityType.CUSTOMER and c.related_entity_id is not None:
-            entity = session.query(Customer).filter_by(id=c.related_entity_id).first()
-            related_name = entity.name if entity is not None else None
-
-        last_comm = None
-        if c.related_entity_type is not None and c.related_entity_id is not None:
-            last_comm = (
-                session.query(Communication)
-                .filter_by(related_entity_type=c.related_entity_type, related_entity_id=c.related_entity_id)
-                .order_by(Communication.occurred_at.desc())
-                .first()
-            )
+        related_name = names.get(c.related_entity_id) if c.related_entity_type in (RelatedEntityType.SUPPLIER, RelatedEntityType.CUSTOMER) else None
+        last_comm = last_by_entity.get((c.related_entity_type, c.related_entity_id)) if c.related_entity_type is not None and c.related_entity_id is not None else None
 
         items.append(
             {

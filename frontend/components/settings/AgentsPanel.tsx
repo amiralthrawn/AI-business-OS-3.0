@@ -12,10 +12,29 @@ const ACTIONS: { key: string; label: string; hint: string }[] = [
 const STATUS: Record<string, string> = { ok: "À jour", not_configured: "Clé manquante", error: "Erreur" };
 
 export default function AgentsPanel({ overview }: { overview: AgentsOverview }) {
-  const [settings, setSettings] = useState(overview.settings ?? { enabled: true, autonomy: {} });
+  const [settings, setSettings] = useState(overview.settings ?? { enabled: true, autonomy: {}, watch_topics: [] });
   const [agents, setAgents] = useState(overview.agents);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [topics, setTopics] = useState<string[]>(overview.settings?.watch_topics ?? []);
+  const [draft, setDraft] = useState("");
+
+  async function saveTopics(next: string[], runNow: boolean) {
+    setBusy("topics");
+    setMsg(null);
+    try {
+      const res = await agentsCall<{ topics: string[]; run: { message: string } | null }>("/watch-topics", "PUT", { topics: next, run: runNow });
+      setTopics(res.topics);
+      setDraft("");
+      if (res.run) setMsg(res.run.message);
+      if (runNow) setAgents((await agentsCall<AgentsOverview>("/overview", "GET")).agents);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Échec");
+    } finally {
+      setBusy(null);
+    }
+  }
+  const draftTopics = draft.split("\n").map((t) => t.trim()).filter(Boolean);
 
   async function save(next: typeof settings) {
     setSettings(next);
@@ -54,7 +73,7 @@ export default function AgentsPanel({ overview }: { overview: AgentsOverview }) 
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-[14px] font-semibold text-text">{a.label}</p>
             <span className={`rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold ${a.configured ? "bg-success-soft text-success" : "bg-warning-soft text-warning"}`}>
-              {a.configured ? (a.last_status ? STATUS[a.last_status] ?? a.last_status : "Pas encore lancé") : "Clé Perplexity requise"}
+              {a.configured ? (a.last_status ? STATUS[a.last_status] ?? a.last_status : "Pas encore lancé") : "Clé de recherche requise"}
             </span>
             <Button variant="ghost" loading={busy === a.key} onClick={() => run(a.key)} className="ml-auto" disabled={!a.configured}>Lancer maintenant</Button>
           </div>
@@ -62,11 +81,39 @@ export default function AgentsPanel({ overview }: { overview: AgentsOverview }) 
           {a.last_message && <p className="mt-1 text-[12px] text-text-faint">Dernier passage : {a.last_message}{a.last_run_at ? ` · ${new Date(a.last_run_at).toLocaleString("fr-FR")}` : ""}</p>}
           {!a.configured && (
             <p className="mt-2 text-[12.5px] text-text-soft">
-              Pour l&rsquo;activer : créez une clé sur perplexity.ai (API) puis ajoutez la ligne <code className="rounded bg-surface px-1">PERPLEXITY_API_KEY=votre_clé</code> dans le fichier <code className="rounded bg-surface px-1">.env</code> à la racine du projet, et relancez.
+              Pour l&rsquo;activer : ajoutez la variable <code className="rounded bg-surface px-1">OPENROUTER_API_KEY</code> (clé créée sur openrouter.ai) dans l&rsquo;environnement du serveur, puis redéployez.
             </p>
           )}
         </div>
       ))}
+
+      <div>
+        <p className="text-[13.5px] font-semibold text-text">Sujets que le Veilleur doit suivre</p>
+        <p className="mt-1 text-[12.5px] text-text-soft">Un site, un concurrent, un salon, un marché : écrivez-le avec vos mots, un sujet par ligne. Le Veilleur cherche tout ce qu&rsquo;il peut établir de fiable, avec ses sources, et le revérifie à chaque passage.</p>
+        {topics.length > 0 && (
+          <ul className="mt-3 space-y-2">
+            {topics.map((t) => (
+              <li key={t} className="flex items-start gap-2 rounded-xl bg-surface-sunken px-3.5 py-2.5 text-[13px] text-text">
+                <span className="min-w-0 flex-1 break-words">{t}</span>
+                <button type="button" aria-label="Retirer ce sujet" disabled={busy === "topics"} onClick={() => void saveTopics(topics.filter((x) => x !== t), false)} className="shrink-0 px-1 text-[16px] leading-none text-text-faint hover:text-danger">×</button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={3}
+          placeholder={"Ex. :\noemstrade.com : prix et stocks de composants\nSalon Electronica à Munich : exposants, dates"}
+          className="mt-3 w-full rounded-xl border-[1.5px] border-border-strong bg-surface px-3.5 py-2.5 text-[13.5px] outline-none focus:border-accent"
+        />
+        <div className="mt-2 flex flex-wrap items-center gap-2.5">
+          <Button loading={busy === "topics"} disabled={draftTopics.length === 0 || !agents.find((a) => a.key === "veilleur")?.configured} onClick={() => void saveTopics([...topics, ...draftTopics], true)}>
+            Ajouter et chercher maintenant
+          </Button>
+          <Button variant="ghost" disabled={draftTopics.length === 0 || busy === "topics"} onClick={() => void saveTopics([...topics, ...draftTopics], false)}>Ajouter seulement</Button>
+        </div>
+      </div>
 
       <div>
         <p className="text-[13.5px] font-semibold text-text">Que peut-il faire sans vous demander ?</p>

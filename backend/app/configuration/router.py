@@ -1,3 +1,5 @@
+import hashlib
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -178,6 +180,17 @@ async def import_file(
 
 
 async def _run_import(db: Session, company: Company, kind: str, filename: str, content: bytes, tool: str | None, event_bus: EventBus) -> dict:
+    sha = hashlib.sha256(content).hexdigest()
+    for earlier in service.get_configuration(db, company.id).get("imports") or []:
+        if earlier.get("sha") == sha:
+            when = str(earlier.get("at") or "")[:10]
+            raise HTTPException(
+                status_code=409,
+                detail=tx(
+                    f"Impossible : ce document a déjà été déposé (« {earlier.get('file', 'document')} »{', le ' + when if when else ''}).",
+                    f"Not possible: this document was already uploaded (\"{earlier.get('file', 'document')}\"{', on ' + when if when else ''}).",
+                ),
+            )
     try:
         if kind == "fec":
             result, summary = imports.import_fec(db, company.id, content)
@@ -195,7 +208,7 @@ async def _run_import(db: Session, company: Company, kind: str, filename: str, c
     except imports.ImportError_ as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    entry = {"kind": kind, "file": filename[:200], "created": result.created, "updated": result.updated, "skipped": result.skipped, "tool": tool}
+    entry = {"sha": sha, "kind": kind, "file": filename[:200], "created": result.created, "updated": result.updated, "skipped": result.skipped, "tool": tool}
     if summary:
         entry["summary"] = summary
     db.commit()

@@ -51,7 +51,7 @@ function href(params: Record<string, string | undefined>) {
 // Communications hub (V2): every exchange (email, website, appointments) as a
 // business object linked to the customers, suppliers, quotes and orders it
 // concerns, with AI assistance that prepares and never sends on its own.
-export default async function CommunicationsPage({ searchParams }: { searchParams: Promise<{ tab?: string; message?: string; channel?: string; box?: string }> }) {
+export default async function CommunicationsPage({ searchParams }: { searchParams: Promise<{ tab?: string; message?: string; channel?: string; box?: string; q?: string; p?: string }> }) {
   const sp = await searchParams;
   const tab = TABS.some((t) => t.key === sp.tab) ? sp.tab! : "mailboxes";
   const me = await getMe().catch(() => null);
@@ -129,7 +129,7 @@ export default async function CommunicationsPage({ searchParams }: { searchParam
 
       {tab === "followups" && performance && <FollowUpPerformancePanel perf={performance} />}
       {tab === "followups" && followUps && <FollowUpList items={followUps.items} note={followUps.note} canDraft={canWrite} />}
-      {tab === "contacts" && <PeoplePanel />}
+      {tab === "contacts" && <PeoplePanel q={sp.q ?? ""} page={Math.max(1, Number.parseInt(sp.p ?? "1", 10) || 1)} />}
       {tab === "channels" && <ChannelsPanel />}
       {tab === "website" && <Website canWrite={canWrite} canConfigure={can(me?.permissions, "write:settings")} />}
     </main>

@@ -74,6 +74,19 @@ def self_prompt(profile: str, name: str, today: date) -> str:
     )
 
 
+def topics_prompt(profile: str, topics: list[str], today: date) -> str:
+    listed = "\n".join(f"- {t}" for t in topics)
+    return (
+        f"Nous sommes le {today.isoformat()}. {profile}\n\n"
+        "L'entreprise demande EXPRESSÉMENT de suivre les sujets suivants (ce peut être des sites, des concurrents, des salons, des marchés) :\n"
+        f"{listed}\n\n"
+        "Pour chacun, cherche sur le web tout ce que tu peux établir de fiable : ce que c'est, ce que cela change pour cette entreprise, "
+        "les prix, stocks, dates, lieux ou chiffres publics, et comment obtenir l'information qui manque (par exemple une liste d'exposants). "
+        "Distingue clairement ce qui est vérifié de ce que tu n'as pas pu confirmer (dans ce cas, n'écris pas de fait, mets-le dans needs_info). "
+        "Un élément par information utile, au plus 3 par sujet."
+    )
+
+
 def parse_items(text: str) -> list[dict]:
     text = text.strip()
     text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
@@ -97,11 +110,14 @@ def parse_date(value) -> datetime | None:
     return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
 
 
-def scan(profile: str, company_name: str, today: date) -> list[tuple[dict, list[str]]]:
+def scan(profile: str, company_name: str, today: date, topics: list[str] | None = None) -> list[tuple[dict, list[str]]]:
     """Returns [(item, source_urls)]. Raises perplexity.PerplexityError."""
 
     out: list[tuple[dict, list[str]]] = []
-    for prompt in (outside_prompt(profile, today), self_prompt(profile, company_name, today)):
+    prompts = [outside_prompt(profile, today), self_prompt(profile, company_name, today)]
+    if topics:
+        prompts.append(topics_prompt(profile, topics[:12], today))
+    for prompt in prompts:
         text, sources = perplexity.ask(SYSTEM, prompt)
         out.extend((item, sources) for item in parse_items(text))
     return out

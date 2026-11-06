@@ -34,6 +34,7 @@ from app.core.entities import (
 ACTION_TYPES = ("calendar_event", "task")
 DEFAULT_SETTINGS = {"enabled": True, "autonomy": {"calendar_event": "ask", "task": "ask"}}
 PARIS = ZoneInfo("Europe/Paris")
+MAX_TOPICS = 12
 
 
 def now() -> datetime:
@@ -52,13 +53,36 @@ def get_settings(session: Session, company_id: uuid.UUID) -> dict:
     config = config_service.get_configuration(session, company_id)
     saved = config.get("agents") or {}
     autonomy = {**DEFAULT_SETTINGS["autonomy"], **{k: v for k, v in (saved.get("autonomy") or {}).items() if k in ACTION_TYPES and v in ("ask", "auto")}}
-    return {"enabled": bool(saved.get("enabled", True)), "autonomy": autonomy}
+    return {"enabled": bool(saved.get("enabled", True)), "autonomy": autonomy, "watch_topics": watch_topics(saved)}
+
+
+def watch_topics(saved: dict) -> list[str]:
+    return [t for t in (saved.get("watch_topics") or []) if isinstance(t, str) and t.strip()][:MAX_TOPICS]
+
+
+def set_watch_topics(session: Session, company_id: uuid.UUID, topics: list[str]) -> list[str]:
+    """What the company asked the Veilleur to follow, in its own words."""
+
+    cleaned: list[str] = []
+    for topic in topics:
+        text = " ".join(str(topic).split())[:300]
+        if text and text.lower() not in (c.lower() for c in cleaned):
+            cleaned.append(text)
+    context = BusinessContextService(session).get_or_create(company_id)
+    config = dict(context.configuration or {})
+    agents = dict(config.get("agents") or {})
+    agents["watch_topics"] = cleaned[:MAX_TOPICS]
+    config["agents"] = agents
+    context.configuration = config
+    session.commit()
+    return agents["watch_topics"]
 
 
 def save_settings(session: Session, company_id: uuid.UUID, enabled: bool, autonomy: dict[str, str]) -> dict:
     context = BusinessContextService(session).get_or_create(company_id)
     config = dict(context.configuration or {})
     config["agents"] = {
+        **(config.get("agents") or {}),
         "enabled": enabled,
         "autonomy": {k: ("auto" if autonomy.get(k) == "auto" else "ask") for k in ACTION_TYPES},
     }
@@ -96,14 +120,14 @@ def run_veilleur(session: Session, company: Company) -> AgentRun:
     run = AgentRun(company_id=company.id, agent="veilleur", status="ok", found=0)
     session.add(run)
     if not perplexity.configured():
-        run.status, run.message = "not_configured", "La clé Perplexity n'est pas renseignée : le Veilleur ne cherche rien tant qu'elle manque."
+        run.status, run.message = "not_configured", "Aucune clé de recherche web n'est renseignée : le Veilleur ne cherche rien tant qu'elle manque."
         run.finished_at = now()
         session.commit()
         return run
     config = config_service.get_configuration(session, company.id)
     profile = veilleur.profile_text(company.name, company.website_url, config_service.ai_profile(config), knowledge(session, company.id))
     try:
-        results = veilleur.scan(profile, company.name, date.today())
+        results = veilleur.scan(profile, company.name, date.today(), get_settings(session, company.id)["watch_topics"])
     except perplexity.PerplexityError as exc:
         run.status, run.message = "error", str(exc)[:300]
         run.finished_at = now()
@@ -247,7 +271,7 @@ def guide(session: Session, company: Company) -> dict:
         (10, session.query(UserProfile).count() > 1, "Inviter votre équipe", "Chacun voit ce qui le concerne et peut valider ses décisions.", "/people"),
         (5, messaging or count(Communication) > 0, "Relier vos e-mails et votre messagerie", "L'IA pourra analyser et prioriser vos échanges.", "/settings"),
         (5, bool(company.website_url), "Renseigner votre site web", "Le Veilleur contrôlera votre visibilité en ligne.", "/settings"),
-        (10, perplexity.configured(), "Activer le Veilleur (clé Perplexity)", "Sans elle, aucune recherche externe : salons, prix, concurrents, avis Google.", "/settings#agents"),
+        (10, perplexity.configured(), "Activer le Veilleur (clé de recherche web)", "Sans elle, aucune recherche externe : salons, prix, concurrents, avis Google.", "/settings#agents"),
     ]
     total = sum(w for w, *_ in checks)
     done = sum(w for w, ok, *_ in checks if ok)

@@ -177,3 +177,24 @@ def test_openrouter_is_used_first_with_sonar_citations(monkeypatch):
     text, sources = perplexity.ask("sys", "q")
     assert text == "Oui." and sources == ["https://a.example/1", "https://b.example/2"]
     assert "openrouter.ai" in seen["url"] and seen["body"]["model"] == "perplexity/sonar"
+
+
+def test_watch_topics_are_saved_and_given_to_the_veilleur(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "perplexity_api_key", "k")
+    prompts = []
+
+    def fake_ask(system, user, **kw):
+        prompts.append(user)
+        return "[]", []
+
+    monkeypatch.setattr(perplexity, "ask", fake_ask)
+    headers = _director(client)
+    res = client.put("/agents/watch-topics", headers=headers, json={"topics": ["oemstrade.com : prix", "oemstrade.com : prix", "Salon Electronica Munich"], "run": True})
+    assert res.status_code == 200, res.text
+    assert res.json()["topics"] == ["oemstrade.com : prix", "Salon Electronica Munich"]
+    assert any("oemstrade.com : prix" in p and "EXPRESSÉMENT" in p for p in prompts)
+    overview = client.get("/agents/overview", headers=headers).json()
+    assert overview["settings"]["watch_topics"] == ["oemstrade.com : prix", "Salon Electronica Munich"]
+    # changing the autonomy settings keeps the topics
+    client.put("/agents/settings", headers=headers, json={"enabled": True, "autonomy": {"task": "auto"}})
+    assert client.get("/agents/overview", headers=headers).json()["settings"]["watch_topics"] == ["oemstrade.com : prix", "Salon Electronica Munich"]

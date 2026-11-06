@@ -1,3 +1,4 @@
+import ListPager, { matches, paginate } from "@/components/ui/ListPager";
 import { CampaignPerformancePanel } from "@/components/communications/Performance";
 import ContactSummaryCard from "@/components/data/ContactSummaryCard";
 import Badge from "@/components/ui/Badge";
@@ -83,7 +84,7 @@ export async function ChannelsPanel() {
   );
 }
 
-export async function PeoplePanel() {
+export async function PeoplePanel({ q = "", page = 1 }: { q?: string; page?: number }) {
   let contacts: ContactListItem[] = [];
   try {
     contacts = await getContacts();
@@ -93,11 +94,16 @@ export async function PeoplePanel() {
   return (
     <section>
       <span className="mb-4 block text-[11.5px] font-bold tracking-wide text-text-faint uppercase">Personnes ({contacts.length})</span>
+      {contacts.length > 0 && (
+        <div className="mb-4">
+          <ListPager basePath="/communications" params={{ tab: "contacts" }} q={q} page={page} total={contacts.filter((c) => matches(q, c.name, c.email, c.role, c.related_entity_name)).length} placeholder="Chercher une personne, une société, un e-mail…" />
+        </div>
+      )}
       {contacts.length === 0 ? (
         <EmptyState message="Aucun contact pour l'instant." hint="Les contacts apparaissent ici dès qu'ils sont liés à un fournisseur ou un client." />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {contacts.map((c) => (
+          {paginate(contacts.filter((c) => matches(q, c.name, c.email, c.role, c.related_entity_name)), page).map((c) => (
             <ContactSummaryCard key={c.id} contact={c} />
           ))}
         </div>

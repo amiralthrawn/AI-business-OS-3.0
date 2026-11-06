@@ -24,6 +24,11 @@ class SettingsIn(BaseModel):
     autonomy: dict[str, str] = Field(default_factory=dict)
 
 
+class TopicsIn(BaseModel):
+    topics: list[str] = Field(default_factory=list, max_length=12)
+    run: bool = False
+
+
 class AnswerIn(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
 
@@ -80,6 +85,20 @@ def overview(db: Session = Depends(get_db), user: CurrentUser = Depends(get_curr
 @router.put("/settings")
 def put_settings(payload: SettingsIn, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
     return service.save_settings(db, _company(db).id, payload.enabled, payload.autonomy)
+
+
+@router.put("/watch-topics")
+def put_watch_topics(payload: TopicsIn, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    """The subjects the company wants followed (sites, competitors, trade
+    fairs...). With run=true the Veilleur starts looking right away."""
+
+    company = _company(db)
+    topics = service.set_watch_topics(db, company.id, payload.topics)
+    result = None
+    if payload.run:
+        run = service.run_veilleur(db, company)
+        result = {"status": run.status, "found": run.found, "message": run.message}
+    return {"topics": topics, "run": result}
 
 
 @router.post("/{agent}/run")

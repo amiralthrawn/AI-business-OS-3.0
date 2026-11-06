@@ -105,7 +105,10 @@ def test_customer_csv_import_is_real_idempotent_and_company_scoped(client, db_se
     assert (body["created"], body["updated"], body["skipped"]) == (2, 0, 1)
     assert body["recognised_columns"]["name"] == "Client"
 
-    again = client.post("/configuration/imports/customers", headers=headers, files={"file": ("clients.csv", csv_bytes)}).json()
+    # the very same file is refused...
+    assert client.post("/configuration/imports/customers", headers=headers, files={"file": ("clients.csv", csv_bytes)}).status_code == 409
+    # ...and an edited copy of the same data updates, never duplicates
+    again = client.post("/configuration/imports/customers", headers=headers, files={"file": ("clients2.csv", csv_bytes + b"\n\n")}).json()
     assert (again["created"], again["updated"]) == (0, 2)
 
     names = {c.name: c.status for c in db_session.query(Customer).all()}
@@ -241,9 +244,10 @@ def test_fec_import_posts_real_sales_and_purchases_once(client, db_session):
         "AC\t2\t20250110\t401000\tF1\tTexas Chips\t0,00\t600,00\n"
         "AC\t2\t20250110\t607000\t\t\t500,00\t0,00\n"
     ).encode()
-    for _ in range(2):  # re-importing must not duplicate
-        res = client.post("/configuration/imports/fec", headers=headers, files={"file": ("fec.txt", fec)})
+    for copy in (fec, fec + b"\n"):  # an edited copy of the same entries must not duplicate
+        res = client.post("/configuration/imports/fec", headers=headers, files={"file": ("fec.txt", copy)})
         assert res.status_code == 200, res.text
+    assert client.post("/configuration/imports/fec", headers=headers, files={"file": ("fec.txt", fec)}).status_code == 409
     rows = db_session.query(Transaction).all()
     assert sorted((t.type, t.amount) for t in rows) == sorted(
         [(TransactionType.SALES_ORDER, 1000.0), (TransactionType.INVOICE, 500.0)]
@@ -261,7 +265,8 @@ def test_sales_and_purchases_files_become_transactions(client, db_session):
     res = client.post("/configuration/imports/auto", headers=headers, files={"file": ("ventes.csv", sales)})
     assert res.status_code == 200, res.text
     assert res.json()["kind"] == "sales" and res.json()["created"] == 2
-    again = client.post("/configuration/imports/auto", headers=headers, files={"file": ("ventes.csv", sales)}).json()
+    assert client.post("/configuration/imports/auto", headers=headers, files={"file": ("ventes.csv", sales)}).status_code == 409
+    again = client.post("/configuration/imports/auto", headers=headers, files={"file": ("ventes2.csv", sales + b"\n")}).json()
     assert again["created"] == 0
     assert db_session.query(Transaction).count() == 2
     assert sorted(c["name"] for c in client.get("/customers", headers=headers).json()) == ["Acme SA", "Beta GmbH"]
@@ -366,7 +371,10 @@ def test_stock_list_becomes_products_and_physical_stock(client, session_factory)
         quantities = sorted((s.location, s.quantity) for s in db.query(StockPosition).all())
         assert quantities == [("AA4", 5.0), ("B1 · DC 2142", 100.0), ("B1 · DC 2301", 50.0)]
         assert all(s.kind == StockKind.PHYSICAL for s in db.query(StockPosition).all())
-    again = client.post("/configuration/imports/auto", headers=headers, files={"file": ("stock.csv", csv, "text/csv")}).json()
+    same = client.post("/configuration/imports/auto", headers=headers, files={"file": ("copie.csv", csv, "text/csv")})
+    assert same.status_code == 409 and "déjà été déposé" in same.json()["detail"]
+    changed = csv + b"LM317T;2142;7;Texas Instruments;-;B1\n"
+    again = client.post("/configuration/imports/auto", headers=headers, files={"file": ("stock.csv", changed, "text/csv")}).json()
     assert again["created"] == 0 and again["updated"] == 3
 
 
@@ -385,8 +393,8 @@ def test_prospect_list_is_imported_as_prospects_with_contacts(client, session_fa
         assert "SIREN 055503130" in customers["APPAREILS PRECISION"].notes and "38640 CLAIX" in customers["APPAREILS PRECISION"].notes
         contacts = sorted((c.name, c.role) for c in db.query(Contact).all())
         assert contacts == [("Axel Pelatan", "Contact achats"), ("Christopher Pelatan", "Président")]
-    again = client.post("/configuration/imports/auto", headers=headers, files={"file": ("prospects.csv", csv, "text/csv")}).json()
-    assert again["created"] == 0
+    again = client.post("/configuration/imports/auto", headers=headers, files={"file": ("prospects.csv", csv + b"999;AUTRE;;;;;;;;;;\n", "text/csv")}).json()
+    assert again["created"] == 1 and again["updated"] == 2
     with session_factory() as db:
         assert db.query(Contact).count() == 2
 
