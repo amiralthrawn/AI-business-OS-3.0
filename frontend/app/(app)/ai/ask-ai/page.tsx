@@ -37,7 +37,7 @@ export default function AskAIPage() {
   const agents = result ? result.agent.split(",").map((a) => a.trim()) : [];
 
   return (
-    <main className="mx-auto max-w-2xl space-y-7 p-8 md:p-12">
+    <main className="mx-auto max-w-2xl space-y-7 p-4 sm:p-8 md:p-12">
       <PageHeader title="Demander à l'IA" description="Une question, répondue à partir de vraies données métier par un agent spécialisé. Pas de mémoire, pas d'historique." />
 
       <form

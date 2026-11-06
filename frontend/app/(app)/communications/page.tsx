@@ -75,7 +75,7 @@ export default async function CommunicationsPage({ searchParams }: { searchParam
   const rows = messages as (CommunicationRow & Partial<Pick<MailboxRow, "needs_reply" | "mailbox_reason">>)[];
 
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <PageHeader title="Communications" description="Emails, demandes du site et rendez-vous — reliés aux clients, fournisseurs, devis et commandes qu'ils concernent." />
       <WorkspaceTabs active={tab} tabs={TABS.map((t) => ({ ...t, href: href({ tab: t.key }) }))} />
 

@@ -55,7 +55,7 @@ export default async function OSActivityPage({ searchParams }: { searchParams: P
   }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-8 p-8 md:p-12">
+    <main className="mx-auto max-w-3xl space-y-8 p-4 sm:p-8 md:p-12">
       <PageHeader
         title="Activité de l'entreprise"
         description="Ce que l'OS a analysé ou recommandé, et ce que l'entreprise a vécu, par secteur — jamais une action qui n'a pas réellement eu lieu."

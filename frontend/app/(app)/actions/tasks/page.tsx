@@ -23,7 +23,7 @@ export default async function TasksPage() {
   }
 
   return (
-    <main className="mx-auto max-w-4xl space-y-6 p-8 md:p-12">
+    <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-8 md:p-12">
       <PageHeader
         title="Tâches"
         description="Le centre d'action de l'entreprise. Inclut les actions proposées par l'IA en attente de validation — rien ne s'exécute automatiquement."

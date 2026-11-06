@@ -113,22 +113,22 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
   return (
     <div>
       <p className="mt-3 text-[12px] font-semibold text-text-faint">Synchronisation</p>
-      <div className="mt-6 flex items-center gap-5">
-        <div className={`flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-[18px] font-display text-[30px] font-semibold text-white transition-colors ${synced ? "bg-success" : "bg-accent"}`}>
+      <div className="mt-5 flex items-center gap-4 sm:mt-6 sm:gap-5">
+        <div className={`flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl font-display text-[26px] sm:h-[64px] sm:w-[64px] sm:rounded-[18px] sm:text-[30px] font-semibold text-white transition-colors ${synced ? "bg-success" : "bg-accent"}`}>
           {synced ? (
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
           ) : (
             label.charAt(0).toUpperCase()
           )}
         </div>
-        <h1 className="font-display text-[36px] italic leading-tight md:text-[42px]">{synced ? `${label} est synchronisé` : `Synchronisons ${label}`}</h1>
+        <h1 className="min-w-0 break-words font-display text-[26px] italic leading-tight sm:text-[36px] md:text-[42px]">{synced ? `${label} est synchronisé` : `Synchronisons ${label}`}</h1>
       </div>
       {error && <p className="mt-4 text-[13px] text-danger">{error}</p>}
       {!item && !error && <p className="mt-6 text-[13px] text-text-faint">Chargement…</p>}
 
       {item && (
         <>
-          <p className="mt-6 max-w-xl text-[16px] leading-relaxed text-text-soft">{item.ai_use}</p>
+          <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-text-soft sm:mt-6 sm:text-[16px]">{item.ai_use}</p>
 
           <div className="mt-6 flex flex-wrap gap-2">
             {item.data.map((d) => (
@@ -136,7 +136,7 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
             ))}
           </div>
 
-          <div className="mt-9 rounded-2xl border border-border p-6">
+          <div className="mt-7 rounded-2xl border border-border p-4 sm:mt-9 sm:p-6">
             <p className="text-[12px] font-bold uppercase tracking-wide text-accent-strong">Récupérer vos données</p>
             <p className="mt-2 text-[14px] font-semibold text-text">1. Exportez-les depuis {label}.</p>
             {guideLoading && <p className="mt-2 text-[13px] text-text-faint">Je cherche la procédure de {label} dans sa documentation…</p>}
@@ -179,7 +179,7 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") void ask(); }}
-                  placeholder={`Ex. : je ne trouve pas l'export dans ${label}`}
+                  placeholder="Votre question…"
                   className="min-w-0 flex-1 rounded-xl border-[1.5px] border-border-strong bg-surface px-3.5 py-2 text-[13.5px] outline-none focus:border-accent"
                 />
                 <button type="button" disabled={asking} onClick={() => void ask()} className="rounded-full bg-text px-5 py-2 text-[13px] font-semibold text-surface hover:bg-text/90 disabled:opacity-50">
@@ -240,7 +240,7 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
           </div>
 
           {next && (next.notes.length > 0 || next.suggestions.length > 0) && next.imported_kinds.length > 0 && (
-            <div className="mt-5 rounded-2xl border border-accent/40 bg-accent-soft p-6">
+            <div className="mt-5 rounded-2xl border border-accent/40 bg-accent-soft p-4 sm:p-6">
               <p className="text-[12px] font-bold uppercase tracking-wide text-accent-strong">Et maintenant ?</p>
               {next.notes.map((n) => <p key={n} className="mt-2 text-[13.5px] text-text">{n}</p>)}
               <div className="mt-3 flex flex-wrap gap-2">
@@ -258,7 +258,7 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
             </div>
           )}
 
-          <div className="mt-5 rounded-2xl border border-border p-6">
+          <div className="mt-5 rounded-2xl border border-border p-4 sm:p-6">
             <p className="text-[12px] font-bold uppercase tracking-wide text-text-faint">Connexion directe</p>
             <p className="mt-2 text-[13.5px] text-text-soft">
               Pour que {label} se synchronise seul, sans fichier : {item.direct_methods.join(" ou ")}. Elle se fait en lecture seule, avec l&rsquo;accord de votre administrateur, et nous la mettons en place avec vous.

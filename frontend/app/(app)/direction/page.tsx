@@ -110,7 +110,7 @@ export default async function DirectionPage({ searchParams }: { searchParams: Pr
   const canWrite = can(me?.permissions, "write:treasury");
 
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <PageHeader title="Direction" description="Trésorerie, comptes, capital et valeur estimée de l'entreprise — accès réservé." />
       {tabs.length === 0 ? (
         <ErrorBanner message="Votre profil n'a pas accès à cet espace." />

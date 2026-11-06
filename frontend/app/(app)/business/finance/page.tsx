@@ -28,7 +28,7 @@ export default async function FinancePage() {
   }
 
   return (
-    <main className="space-y-10 p-8 md:p-12">
+    <main className="space-y-10 p-4 sm:p-8 md:p-12">
       <PageHeader title="Finance" description="Revenus, coûts et marge, calculés à partir de toutes les transactions du Data Core." />
 
       {error && <ErrorBanner message={error} />}

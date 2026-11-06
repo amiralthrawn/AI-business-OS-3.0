@@ -29,7 +29,7 @@ export default async function SettingsPage() {
   }
 
   return (
-    <main className="space-y-10 p-8 md:p-12">
+    <main className="space-y-10 p-4 sm:p-8 md:p-12">
       <PageHeader
         title="Configuration"
         description={`Personnalisez AI Business OS${company ? ` pour ${company.name}` : ""}.`}

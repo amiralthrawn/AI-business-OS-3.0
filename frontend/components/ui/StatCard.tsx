@@ -21,9 +21,9 @@ interface StatCardProps {
 export default function StatCard({ label, value, href, sparkline, sparklineEmpty, sparklineTone, badge, emphasize }: StatCardProps) {
   const content = (
     <>
-      <p className="text-[13px] font-medium text-text-soft">{label}</p>
+      <p className="text-[11.5px] font-medium leading-tight text-text-soft sm:text-[13px]">{label}</p>
       <p
-        className={`mt-3 figure text-[28px] md:text-[34px] ${
+        className={`mt-2 figure break-words text-[17px] min-[400px]:text-[20px] sm:mt-3 sm:text-[28px] md:text-[34px] ${
           emphasize ? "text-danger" : "text-text"
         }`}
       >
@@ -46,7 +46,7 @@ export default function StatCard({ label, value, href, sparkline, sparklineEmpty
     </>
   );
 
-  const className = `p-6 transition-colors ${href ? "hover:border-border-strong" : ""} ${
+  const className = `p-3 sm:p-6 transition-colors ${href ? "hover:border-border-strong" : ""} ${
     emphasize ? "border-danger-soft" : ""
   }`;
 

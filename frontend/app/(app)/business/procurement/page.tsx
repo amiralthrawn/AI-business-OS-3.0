@@ -40,7 +40,7 @@ export default async function ProcurementPage({ searchParams }: { searchParams: 
   const procurementFollowUps = followUps?.items.filter((i) => i.object.domain === "procurement") ?? [];
 
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <PageHeader
         title="Achats"
         description="Demandes d'achat, consultation et comparaison des fournisseurs, commandes, réceptions et factures."

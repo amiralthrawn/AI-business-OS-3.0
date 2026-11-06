@@ -78,7 +78,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   const dateLabel = DATE_LABELS[doc.kind];
 
   return (
-    <main className="space-y-10 p-8 md:p-12">
+    <main className="space-y-10 p-4 sm:p-8 md:p-12">
       <ObjectBreadcrumb section={sectionFor(doc)} chain={context.breadcrumb} />
 
       {/* OBJET -- quoi, avec qui, où en est-il */}

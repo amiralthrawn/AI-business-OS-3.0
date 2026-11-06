@@ -18,7 +18,7 @@ export default async function OpportunitiesPage() {
   }
 
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <PageHeader title="Opportunités" description="Détectées par l'Intelligence à partir de tendances réelles du Data Core — des règles déterministes, sans LLM." />
       <SectionTabs section="intelligence" active="opportunities" />
       {error && <ErrorBanner message={error} />}

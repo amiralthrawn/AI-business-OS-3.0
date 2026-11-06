@@ -44,7 +44,7 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
   const href = opportunity.related_entity_type ? entityHref(opportunity.related_entity_type, opportunity.related_entity_id ?? "") : null;
 
   return (
-    <main className="mx-auto max-w-3xl space-y-8 p-8 md:p-12">
+    <main className="mx-auto max-w-3xl space-y-8 p-4 sm:p-8 md:p-12">
       <Link href="/intelligence/opportunities" className="text-[13px] text-text-faint hover:text-text">
         &larr; Retour aux opportunités
       </Link>

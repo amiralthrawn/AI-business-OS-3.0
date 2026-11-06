@@ -16,7 +16,7 @@ export default async function CompliancePage() {
   const [requests, categories] = await Promise.all([getComplianceRequests().catch(() => null), getComplianceCategories().catch(() => ({}))]);
   const canWrite = can(me?.permissions, "write:compliance");
   return (
-    <main className="mx-auto max-w-4xl space-y-6 p-8 md:p-12">
+    <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-8 md:p-12">
       <PageHeader title="Conformité & juridique" description="Contrats, NDA, obligations, assurances et échéances — avec le cabinet externe à solliciter si nécessaire." />
       <SectionTabs section="actions" active="compliance" />
       {requests === null ? (

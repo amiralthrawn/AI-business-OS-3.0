@@ -51,7 +51,7 @@ export default async function RiskDetailPage({ params }: { params: Promise<{ id:
   const href = risk.related_entity_type ? entityHref(risk.related_entity_type, risk.related_entity_id ?? "") : null;
 
   return (
-    <main className="mx-auto max-w-3xl space-y-8 p-8 md:p-12">
+    <main className="mx-auto max-w-3xl space-y-8 p-4 sm:p-8 md:p-12">
       <Link href="/intelligence/risks" className="text-[13px] text-text-faint hover:text-text">
         &larr; Retour aux risques
       </Link>

@@ -26,7 +26,7 @@ export default async function NewDocumentPage({ searchParams }: { searchParams: 
   const domain = meta.kinds.find((k) => k.kind === kind)!.domain;
 
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <ObjectBreadcrumb
         section={domain === "sales" ? { label: "Ventes", href: "/business/sales?tab=deals" } : { label: "Achats", href: "/business/procurement?tab=requests" }}
         chain={[]}

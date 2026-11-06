@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import MobileTabBar from "@/components/layout/MobileTabBar";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import { LocaleProvider } from "@/lib/i18n";
@@ -40,9 +41,10 @@ export default function AppShell({
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar companyName={companyName} pendingCount={pendingCount} me={me} users={users} onMenuClick={() => setMobileOpen(true)} />
-          <div className="min-w-0 flex-1 overflow-y-auto">{children}</div>
+          <div className="min-w-0 flex-1 overflow-y-auto pb-[calc(70px+env(safe-area-inset-bottom))] md:pb-0">{children}</div>
         </div>
       </div>
+      <MobileTabBar permissions={me?.permissions ?? null} />
     </LocaleProvider>
   );
 }

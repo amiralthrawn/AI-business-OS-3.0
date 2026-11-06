@@ -31,7 +31,7 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
   const years = yearsSince(e.hired_at);
 
   return (
-    <main className="space-y-10 p-8 md:p-12">
+    <main className="space-y-10 p-4 sm:p-8 md:p-12">
       <ObjectBreadcrumb section={{ label: "Équipe", href: "/people" }} chain={context?.breadcrumb ?? []} />
       <div className="animate-reveal flex flex-wrap items-start justify-between gap-6">
         <div>

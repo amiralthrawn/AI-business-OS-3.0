@@ -35,7 +35,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   ]);
 
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <ObjectBreadcrumb section={{ label: "Ventes · Clients", href: "/business/sales?tab=customers" }} chain={context.breadcrumb} />
 
       <div className="animate-reveal flex items-start justify-between gap-4">

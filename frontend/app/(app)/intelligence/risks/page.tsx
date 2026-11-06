@@ -18,7 +18,7 @@ export default async function RisksPage() {
   }
 
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <PageHeader title="Risques" description="Détectés par l'Intelligence à partir de tendances réelles du Data Core — des règles déterministes, sans LLM." />
       <SectionTabs section="intelligence" active="risks" />
       {error && <ErrorBanner message={error} />}

@@ -42,7 +42,7 @@ export default async function CommandCenterPage() {
   const atStake = signals.reduce((sum, s) => sum + (s.amount_eur ?? 0), 0);
 
   return (
-    <main className="mx-auto max-w-3xl space-y-10 p-6 md:p-10">
+    <main className="mx-auto max-w-3xl space-y-7 p-4 sm:space-y-10 sm:p-6 md:p-10">
       <OnboardingGate needsSetup={needsSetup} />
 
       <PageHeader title={`Bonjour${me?.profile?.name ? ` ${me.profile.name.split(" ")[0]}` : ""}.`} description="Voici ce qui demande votre décision aujourd'hui." />
@@ -52,7 +52,7 @@ export default async function CommandCenterPage() {
       {home && (
         <>
           {/* Trois chiffres, adaptés au rôle */}
-          <section className="grid gap-4 sm:grid-cols-3">
+          <section className="grid grid-cols-3 gap-2 sm:gap-4">
             {finance ? (
               <>
                 <StatCard label="Chiffre d'affaires" value={<AnimatedNumber value={finance.total_revenue} format="EUR" />} />

@@ -38,7 +38,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   ]);
 
   return (
-    <main className="space-y-10 p-8 md:p-12">
+    <main className="space-y-10 p-4 sm:p-8 md:p-12">
       <ObjectBreadcrumb section={{ label: "Catalogue", href: "/data/products" }} chain={context.breadcrumb} />
 
       <div className="animate-reveal flex flex-wrap items-start justify-between gap-6">

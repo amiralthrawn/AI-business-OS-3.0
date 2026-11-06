@@ -24,7 +24,7 @@ export default async function DecisionIntelligencePage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-8 p-8 md:p-12">
+    <main className="mx-auto max-w-3xl space-y-8 p-4 sm:p-8 md:p-12">
       <PageHeader
         title="Intelligence décisionnelle"
         description="Chaque analyse se lit en trois temps : ce qui se passe, pourquoi c'est important et ce que l'OS recommande, puis ce que vous pouvez faire et le résultat réellement obtenu."

@@ -41,7 +41,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const canWrite = can(me?.permissions, "write:sales");
 
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <PageHeader
         title="Ventes"
         description="Demandes clients, devis, commandes et relances — chaque affaire reliée à ses clients, produits, achats et échanges."

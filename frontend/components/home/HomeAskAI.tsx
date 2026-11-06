@@ -35,13 +35,13 @@ export default function HomeAskAI() {
 
   return (
     <div className="space-y-3">
-      <form onSubmit={handleSubmit} className="flex gap-2.5">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-2.5 sm:flex-row">
         <input
           type="text"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Posez une question sur votre activité…"
-          className="flex-1 rounded-xl border-[1.5px] border-border-strong bg-surface px-4 py-2.5 text-[13.5px] outline-none focus:border-accent"
+          placeholder="Posez votre question…"
+          className="min-w-0 flex-1 rounded-xl border-[1.5px] border-border-strong bg-surface px-4 py-3 text-[13.5px] outline-none focus:border-accent"
         />
         <Button type="submit" loading={loading} disabled={!question.trim()}>
           Demander

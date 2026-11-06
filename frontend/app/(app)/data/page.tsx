@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function DataPage() {
   const me = await getMe().catch(() => null);
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <PageHeader title="Données" description="Tous les tableaux détaillés, pour vérifier un chiffre à la source." />
       <DataHub permissions={me?.permissions} />
     </main>

@@ -183,6 +183,22 @@ export default function OnboardingWizard({
     await saveConfiguration({ ...payload(), tools: rest }).catch(() => undefined);
   }
 
+  async function skipToDocuments() {
+    setError(null);
+    setSaving(true);
+    try {
+      await persist();
+      setImportRefresh((n) => n + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Une erreur est survenue lors de l'enregistrement.");
+      setSaving(false);
+      return;
+    }
+    setSaving(false);
+    setSyncing(null);
+    setStep(STEPS.indexOf("Documents"));
+  }
+
   function skipToProduct() {
     localStorage.setItem("aibos_onboarding_done", "1");
     router.push("/");
@@ -208,34 +224,28 @@ export default function OnboardingWizard({
   }
 
   return (
-    <div className="flex min-h-full flex-col items-center bg-bg px-6 py-10">
-      <div className="flex w-full max-w-3xl items-center justify-between">
+    <div className="flex min-h-full flex-col items-center bg-bg px-3 pb-4 pt-5 sm:px-6 sm:py-10">
+      <div className="flex w-full max-w-3xl flex-wrap items-center justify-between gap-x-4 gap-y-2.5 px-1">
         <div className="flex items-center gap-2.5">
           <div className="flex h-[26px] w-[26px] items-center justify-center rounded-lg bg-accent font-display text-[13px] font-semibold text-white">B</div>
-          <span className="font-display text-[15px] font-semibold">AI Business OS</span>
+          <span className="hidden font-display text-[15px] font-semibold sm:inline">AI Business OS</span>
         </div>
-        <div className="flex items-center gap-2">
-          {STEPS.length <= 12 ? (
-            STEPS.map((_, i) => (
-              <span key={i} className={`h-[7px] rounded-full transition-all ${i === step ? "w-[22px] bg-accent" : i < step ? "w-[7px] bg-accent-strong" : "w-[7px] bg-border-strong"}`} />
-            ))
-          ) : (
-            <span className="h-[7px] w-40 overflow-hidden rounded-full bg-border-strong">
-              <span className="block h-full rounded-full bg-accent transition-all" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
-            </span>
-          )}
-          <span className="ml-1.5 font-mono text-[11.5px] text-text-faint">
-            Étape {step + 1} sur {STEPS.length}
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-3 sm:flex-none">
+          <span className="h-[7px] min-w-0 flex-1 overflow-hidden rounded-full bg-border-strong sm:w-40 sm:flex-none">
+            <span className="block h-full rounded-full bg-accent transition-all" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
+          </span>
+          <span className="shrink-0 whitespace-nowrap font-mono text-[11.5px] text-text-faint">
+            {step + 1} / {STEPS.length}
           </span>
         </div>
       </div>
 
-      <div key={step} className={`animate-reveal mt-12 w-full rounded-[20px] border border-border bg-surface p-10 shadow-card md:p-14 ${STEPS[step]?.startsWith("Cat:") && syncing ? "max-w-[760px]" : "max-w-[640px]"}`}>
+      <div key={step} className={`animate-reveal mt-5 w-full rounded-[20px] border border-border bg-surface p-5 shadow-card sm:mt-10 sm:p-10 md:p-14 ${STEPS[step]?.startsWith("Cat:") && syncing ? "max-w-[760px]" : "max-w-[640px]"}`}>
         <p className="text-[12.5px] font-semibold uppercase tracking-wide text-accent-strong">Configuration initiale</p>
 
         {STEPS[step] === "Entreprise" && (
           <>
-            <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
+            <h1 className="mt-3 break-words font-display text-[26px] italic leading-tight sm:text-[32px] md:text-[36px]">
               Faisons connaissance
               <br />
               avec votre entreprise
@@ -285,7 +295,7 @@ export default function OnboardingWizard({
 
         {STEPS[step] === "Activité" && (
           <>
-            <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
+            <h1 className="mt-3 break-words font-display text-[26px] italic leading-tight sm:text-[32px] md:text-[36px]">
               Parlons de
               <br />
               votre activité
@@ -331,9 +341,13 @@ export default function OnboardingWizard({
           return (
             <>
               <p className="mt-3 text-[12px] font-semibold text-text-faint">Vos outils · {index} sur {CATEGORY_QUESTIONS.length}</p>
-              <h1 className="mt-2 font-display text-[32px] italic leading-tight md:text-[36px]">{question}</h1>
+              <h1 className="mt-2 break-words font-display text-[26px] italic leading-tight sm:text-[32px] md:text-[36px]">{question}</h1>
               {category && <p className="mt-3.5 max-w-lg text-[14.5px] text-text-soft">{category.ai_use}</p>}
               <p className="mt-4 text-[13px] text-text-faint">Cliquez sur votre outil pour le synchroniser. Vous n&rsquo;en utilisez pas ? Passez simplement à la question suivante.</p>
+              <button type="button" onClick={() => void skipToDocuments()} className="mt-4 w-full rounded-xl border-[1.5px] border-border-strong bg-surface-alt px-4 py-3 text-left text-[13.5px] font-semibold text-text hover:border-accent sm:w-auto">
+                Je ne me connecte à aucun logiciel pour l&rsquo;instant
+                <span className="block text-[12.5px] font-normal text-text-soft">Passer directement à l&rsquo;envoi de vos documents →</span>
+              </button>
               {error && <p className="mt-3 text-[13px] text-danger">{error}</p>}
               <div className="mt-5">
                 {catalog ? (
@@ -359,7 +373,7 @@ export default function OnboardingWizard({
 
         {STEPS[step] === "Autres outils" && (
           <>
-            <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
+            <h1 className="mt-3 break-words font-display text-[26px] italic leading-tight sm:text-[32px] md:text-[36px]">
               Un autre outil
               <br />
               important ?
@@ -375,7 +389,7 @@ export default function OnboardingWizard({
 
         {STEPS[step] === "Documents" && (
           <>
-            <h1 className="mt-3 font-display text-[30px] italic leading-tight md:text-[34px]">
+            <h1 className="mt-3 break-words font-display text-[26px] italic leading-tight sm:text-[30px] md:text-[34px]">
               Vos autres
               <br />
               documents
@@ -391,7 +405,7 @@ export default function OnboardingWizard({
 
         {STEPS[step] === "Votre rôle" && (
           <>
-            <h1 className="mt-3 font-display text-[32px] italic leading-tight md:text-[36px]">
+            <h1 className="mt-3 break-words font-display text-[26px] italic leading-tight sm:text-[32px] md:text-[36px]">
               Et vous, quel est
               <br />
               votre rôle&nbsp;?
@@ -433,7 +447,7 @@ export default function OnboardingWizard({
               <div className="animate-pop flex h-[52px] w-[52px] items-center justify-center rounded-full bg-success">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
               </div>
-              <h1 className="mt-5 font-display text-[32px] italic leading-tight md:text-[36px]">
+              <h1 className="mt-5 break-words font-display text-[26px] italic leading-tight sm:text-[32px] md:text-[36px]">
                 Tout est prêt{name ? `, ${name}` : ""}.
               </h1>
               <p className="mt-2.5 max-w-md text-[14.5px] text-text-soft">
@@ -458,21 +472,21 @@ export default function OnboardingWizard({
           </>
         )}
 
-        <div className="mt-11 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="sticky bottom-0 -mx-5 mt-8 flex items-center justify-between gap-3 border-t border-border bg-surface/95 px-5 py-3 backdrop-blur sm:static sm:mx-0 sm:mt-11 sm:border-0 sm:bg-transparent sm:p-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
             {(step > 0 || syncing) && (
-              <button type="button" onClick={() => (syncing ? setSyncing(null) : setStep((s) => s - 1))} className="flex items-center gap-1.5 text-[13.5px] font-medium text-text-soft hover:text-text">
+              <button type="button" onClick={() => (syncing ? setSyncing(null) : setStep((s) => s - 1))} className="flex items-center gap-1.5 whitespace-nowrap py-2 text-[13.5px] font-medium text-text-soft hover:text-text">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
                 Retour
               </button>
             )}
             {syncing ? (
-              <button type="button" onClick={() => void next()} className="text-[13.5px] font-medium text-text-soft hover:text-text">
-                Ignorer cette étape
+              <button type="button" onClick={() => void next()} className="whitespace-nowrap py-2 text-[13.5px] font-medium text-text-soft hover:text-text">
+                Ignorer<span className="hidden sm:inline">&nbsp;cette étape</span>
               </button>
             ) : (
-              <button type="button" onClick={skipToProduct} className="text-[13.5px] font-medium text-text-soft hover:text-text">
-                Terminer plus tard
+              <button type="button" onClick={skipToProduct} className="whitespace-nowrap py-2 text-[13.5px] font-medium text-text-soft hover:text-text">
+                <span className="sm:hidden">Plus tard</span><span className="hidden sm:inline">Terminer plus tard</span>
               </button>
             )}
           </div>

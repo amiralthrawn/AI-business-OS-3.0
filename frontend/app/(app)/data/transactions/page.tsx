@@ -19,7 +19,7 @@ export default async function TransactionsPage() {
   }
 
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <PageHeader
         title="Transactions"
         description="Les commandes, factures et commandes clients les plus récentes du Data Core."

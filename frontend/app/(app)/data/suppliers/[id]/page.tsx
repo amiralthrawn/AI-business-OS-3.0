@@ -30,7 +30,7 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
   const [context, documents, account] = await Promise.all([getObjectContext("supplier", id), listDocuments({ supplier_id: id }), getSupplierAccount(id).catch(() => null)]);
 
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <ObjectBreadcrumb section={{ label: "Achats · Fournisseurs", href: "/business/procurement?tab=suppliers" }} chain={context.breadcrumb} />
 
       <div className="animate-reveal flex items-start justify-between gap-4">

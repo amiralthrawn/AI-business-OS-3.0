@@ -25,7 +25,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
   const canWrite = can(me?.permissions, "write:people");
 
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <PageHeader title="Équipe" description="Les personnes, leur travail, leur coût et leur contribution estimée — et les compétences qui manquent." />
       <WorkspaceTabs active={tab} tabs={[{ key: "employees", label: "Employés", href: "/people" }, { key: "recruitment", label: "Compétences & recrutement", href: "/people?tab=recruitment" }]} />
       {tab === "employees" ? <Employees /> : <Recruitment canWrite={canWrite} highlight={sp.candidate} />}

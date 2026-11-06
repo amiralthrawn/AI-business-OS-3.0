@@ -28,7 +28,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
   const me = await getMe().catch(() => null);
 
   return (
-    <main className="space-y-8 p-8 md:p-12">
+    <main className="space-y-8 p-4 sm:p-8 md:p-12">
       <PageHeader title="Catalogue & stock" description="Produits et prestations, fournisseurs capables de les fournir, conditions et stocks." />
       <WorkspaceTabs
         active={active}

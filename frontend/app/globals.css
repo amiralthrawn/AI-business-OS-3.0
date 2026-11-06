@@ -186,3 +186,30 @@ body {
     stroke-dashoffset: 0;
   }
 }
+
+/* Phones and tablets: no sideways scroll, no zoom jump when a field gets the
+   focus (iOS zooms any field under 16px), comfortable touch targets. */
+html,
+body {
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  button,
+  [role="button"] {
+    min-height: 40px;
+  }
+  h1,
+  h2,
+  h3,
+  p,
+  li {
+    overflow-wrap: anywhere;
+  }
+}

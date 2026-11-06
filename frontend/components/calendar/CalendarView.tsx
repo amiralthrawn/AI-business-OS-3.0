@@ -88,9 +88,9 @@ export default function CalendarView() {
     <div className="space-y-5">
       {error && <p className="text-[13px] text-danger">{error}</p>}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Button variant="ghost" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} aria-label="Mois précédent">←</Button>
-          <span className="min-w-40 text-center font-display text-[20px] italic capitalize">{MONTHS[cursor.getMonth()]} {cursor.getFullYear()}</span>
+          <span className="min-w-[9.5rem] text-center font-display text-[20px] italic capitalize">{MONTHS[cursor.getMonth()]} {cursor.getFullYear()}</span>
           <Button variant="ghost" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} aria-label="Mois suivant">→</Button>
           <Button variant="ghost" onClick={() => { setCursor(new Date(today.getFullYear(), today.getMonth(), 1)); setSelected(dayKey(today)); }}>Aujourd&rsquo;hui</Button>
         </div>

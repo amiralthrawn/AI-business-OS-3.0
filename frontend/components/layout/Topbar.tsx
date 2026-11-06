@@ -57,13 +57,13 @@ export default function Topbar({
   const { t } = useLocale();
 
   return (
-    <header className="grid h-[72px] shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border bg-surface px-5 md:px-10">
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="sticky top-0 z-20 flex h-[60px] shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3 sm:px-5 md:grid md:h-[72px] md:grid-cols-[1fr_auto_1fr] md:gap-3 md:px-10">
+      <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-3">
         <button
           type="button"
           onClick={onMenuClick}
           aria-label={t("topbar.open_menu")}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-text-soft hover:bg-surface-sunken md:hidden"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-text-soft hover:bg-surface-sunken md:hidden"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" />
@@ -81,7 +81,7 @@ export default function Topbar({
         <AssistantDrawer />
       </Suspense>
 
-      <div className="flex items-center justify-end gap-3.5">
+      <div className="flex shrink-0 items-center justify-end gap-2.5 md:gap-3.5">
         <Link
           href="/actions/tasks"
           className="relative flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-surface-sunken text-text-soft"
