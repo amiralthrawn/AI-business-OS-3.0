@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from app.agents import perplexity, veilleur
+from app.agents import perplexity, veilleur, veilleur_agent
 from app.business_context.service import BusinessContextService
 from app.configuration import service as config_service
 from app.core.entities import (
@@ -115,6 +115,8 @@ def model_in_use(agent: str) -> dict:
     if agent == "analyste":
         return {"provider": "Calculs internes", "model": None, "kind": "rules", "note": "Aucun modèle de langage : règles et statistiques sur vos chiffres."}
     if (settings.openrouter_api_key or "").strip():
+        if agent == "veilleur":
+            return {"provider": "OpenRouter", "model": settings.openrouter_agent_model, "kind": "agent", "note": f"IA générative avec outils : lit les sites, cherche sur le web ({settings.openrouter_model}), interroge l'Analyste et enregistre ses trouvailles."}
         return {"provider": "OpenRouter", "model": settings.openrouter_model, "kind": "web_search", "note": "Recherche web avec sources."}
     if (settings.gemini_api_key or "").strip():
         return {"provider": "Google Gemini", "model": settings.gemini_model, "kind": "web_search", "note": "Recherche web avec sources (Google Search)."}
@@ -169,14 +171,15 @@ PRICES = {
     "perplexity/sonar": {"in": 1.0, "out": 1.0, "request": 0.005},
     "perplexity/sonar-pro": {"in": 3.0, "out": 15.0, "request": 0.006},
     "gemini-3.5-flash-lite": {"in": 0.10, "out": 0.40, "request": 0.0},
+    "google/gemini-2.5-flash": {"in": 0.30, "out": 2.50, "request": 0.0},
 }
 
 
 def model_catalog() -> list[dict]:
     """Models a company can ask for, with indicative prices (cheapest first)."""
 
-    labels = {"perplexity/sonar": "Perplexity Sonar (économique)", "perplexity/sonar-pro": "Perplexity Sonar Pro (plus précis)", "gemini-3.5-flash-lite": "Google Gemini Flash-Lite (le moins cher)"}
-    rows = [{"model": m, "label": labels[m], "usd_per_m_in": p["in"], "usd_per_m_out": p["out"], "usd_per_request": p["request"]} for m, p in PRICES.items()]
+    labels = {"perplexity/sonar": "Perplexity Sonar (économique)", "perplexity/sonar-pro": "Perplexity Sonar Pro (plus précis)", "gemini-3.5-flash-lite": "Google Gemini Flash-Lite (le moins cher)", "google/gemini-2.5-flash": "Google Gemini 2.5 Flash (agent génératif)"}
+    rows = [{"model": m, "label": labels.get(m, m), "usd_per_m_in": p["in"], "usd_per_m_out": p["out"], "usd_per_request": p["request"]} for m, p in PRICES.items()]
     return sorted(rows, key=lambda r: r["usd_per_m_in"] + r["usd_per_m_out"] + r["usd_per_request"] * 200)
 
 
@@ -233,6 +236,8 @@ def ask_veilleur(session: Session, company: Company, request: str, follow: bool)
     """A direct request to the Veilleur: search this subject now, return what
     was found, and (optionally) keep following it."""
 
+    if veilleur_agent.enabled():
+        return _ask_veilleur_agent(session, company, request, follow)
     if not perplexity.configured():
         log_run(session, company.id, "veilleur", "not_configured", f"Demande : {request[:120]} : aucune clé de recherche.")
         return {"status": "not_configured", "found": [], "message": "Aucune clé de recherche web n'est renseignée : le Veilleur ne peut pas chercher."}
@@ -253,6 +258,23 @@ def ask_veilleur(session: Session, company: Company, request: str, follow: bool)
     session.commit()
     log_run(session, company.id, "veilleur", "ok", message, len(shown))
     return {"status": "ok", "found": shown, "message": message}
+
+
+def _ask_veilleur_agent(session: Session, company: Company, request: str, follow: bool) -> dict:
+    if follow:
+        set_watch_topics(session, company.id, [*get_settings(session, company.id)["watch_topics"], request])
+    config = config_service.get_configuration(session, company.id)
+    profile = veilleur.profile_text(company.name, company.website_url, config_service.ai_profile(config), knowledge(session, company.id))
+    perplexity.drain_usage()
+    try:
+        out = veilleur_agent.run(session, company, profile, request, lambda item, sources: _ingest(session, company, item, sources))
+    except perplexity.PerplexityError as exc:
+        session.rollback()
+        log_run(session, company.id, "veilleur", "error", f"Demande : {request[:120]} : {str(exc)[:200]}")
+        return {"status": "error", "found": [], "message": str(exc)[:300]}
+    session.commit()
+    log_run(session, company.id, "veilleur", "ok", f"Demande : {request[:140]} ({len(out['found'])} information(s) enregistrée(s))", len(out["found"]))
+    return {"status": "ok", "found": out["found"], "message": out["answer"] or "Recherche terminée."}
 
 
 # --- running agents -----------------------------------------------------------

@@ -269,7 +269,7 @@ function DirectRequest({ agent, onDone }: { agent: Agent; onDone: () => Promise<
       </Button>
       {!agent.configured && <p className="mt-2 text-[12.5px] text-text-faint">Cet agent attend une clé de recherche web (OPENROUTER_API_KEY) pour répondre.</p>}
       {busy && <p className="mt-2 text-[12.5px] text-text-faint">Recherche en cours, cela peut prendre une minute…</p>}
-      {message && <p className="mt-2 text-[13px] font-semibold text-text">{message}</p>}
+      {message && <p className="mt-3 whitespace-pre-wrap rounded-xl bg-surface-sunken p-3.5 text-[13.5px] leading-relaxed text-text">{message}</p>}
       {found.map((f, i) => (
         <div key={i} className="mt-2 rounded-xl border border-border p-3.5 text-[13px]">
           <p className="font-semibold text-text">{f.title}</p>

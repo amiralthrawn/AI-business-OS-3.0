@@ -202,6 +202,7 @@ def test_watch_topics_are_saved_and_given_to_the_veilleur(client, monkeypatch):
 
 def test_agents_overview_shows_models_runs_and_model_requests(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "openrouter_api_key", "o")
+    monkeypatch.setattr("app.agents.veilleur_agent.enabled", lambda: False)  # the plain topic search path
     monkeypatch.setattr(perplexity, "ask", lambda system, user, **kw: ('[{"category": "événement", "title": "Electronica Munich", "summary": "Salon.", "why_it_matters": "Fournisseurs.", "date": null}]', ["https://s.example/e"]))
     headers = _director(client)
     ask = client.post("/agents/veilleur/ask", headers=headers, json={"request": "Salon Electronica Munich : exposants", "follow": True})
@@ -239,3 +240,35 @@ def test_usage_is_booked_per_agent_and_priced(client):
     overview = client.get("/agents/overview", headers=headers).json()
     assert overview["usage"]["total"]["tokens"] == 0
     assert overview["usage"]["catalog"][0]["model"] == "gemini-3.5-flash-lite"
+
+
+def test_veilleur_is_an_agent_that_reads_asks_the_analyste_and_saves(client, monkeypatch):
+    from app.agents import perplexity, veilleur_agent
+
+    headers = _director(client, "Agent Co", "agent@co.example")
+    monkeypatch.setattr(get_settings(), "openrouter_api_key", "k")
+    monkeypatch.setattr(veilleur_agent, "read_page", lambda url: ("Prix STM32F4 : 7,90 € chez OEMsTrade " * 20, url))
+    script = iter([
+        {"content": "", "tool_calls": [{"id": "1", "function": {"name": "ask_analyste", "arguments": '{"terms": ["STM32"]}'}}]},
+        {"content": "", "tool_calls": [{"id": "2", "function": {"name": "read_page", "arguments": '{"url": "https://www.oemstrade.com/x"}'}}]},
+        {"content": "", "tool_calls": [{"id": "3", "function": {"name": "save_finding", "arguments": '{"title": "Prix STM32F4 chez OEMsTrade", "summary": "7,90 €", "why_it_matters": "Comparer à votre coût", "sources": ["https://www.oemstrade.com/x", "https://invented.example"]}'}}]},
+        {"content": "J'ai enregistré le prix du STM32F4."},
+    ])
+    seen_tools = []
+    def fake_chat(messages):
+        seen_tools.append([m for m in messages if m["role"] == "tool"][-1]["content"] if any(m["role"] == "tool" for m in messages) else None)
+        return next(script)
+    monkeypatch.setattr(veilleur_agent, "_chat", fake_chat)
+    res = client.post("/agents/veilleur/ask", headers=headers, json={"request": "Compare mes prix avec OEMsTrade " * 30, "follow": False}).json()
+    assert res["status"] == "ok" and res["message"].startswith("J'ai enregistré")
+    assert len(res["found"]) == 1 and res["found"][0]["sources"] == ["https://www.oemstrade.com/x"]  # the invented source is dropped
+    assert seen_tools[1].startswith("Données du logiciel")  # the Analyste answered from the company data
+    props = client.get("/agents/overview", headers=headers).json()["proposals"]
+    assert any(p["title"] == "Prix STM32F4 chez OEMsTrade" for p in props)
+
+
+def test_read_page_refuses_private_addresses():
+    from app.agents import veilleur_agent
+
+    text, url = veilleur_agent.read_page("http://127.0.0.1:8000/secret")
+    assert url is None and "publique" in text
