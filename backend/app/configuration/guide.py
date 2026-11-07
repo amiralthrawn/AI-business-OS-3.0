@@ -172,8 +172,11 @@ def ask(session: Session, company_id: uuid.UUID, tool_key: str, question: str) -
         return {"answer": "La recherche est momentanément indisponible. Réessayez dans un instant.", "sources": [], "grounded": False}
     if not sources:
         return {"answer": "Je n'ai trouvé aucune source fiable pour répondre à cette question, donc je préfère ne pas deviner. Voulez-vous que nous vous aidions directement ?", "sources": [], "grounded": False}
+    from app.agents import service as agents_service
+
+    used = agents_service.used_summary(perplexity.peek_usage())
     _log(session, company_id, "ok", f"Question sur {label} : {question[:100]}", 1)
-    return {"answer": text.strip()[:1500], "sources": sources[:5], "grounded": True}
+    return {"answer": text.strip()[:1500], "sources": sources[:5], "grounded": True, "used": used}
 
 
 def next_steps(config: dict, tool_key: str) -> dict:

@@ -67,19 +67,6 @@ function AgentCard({ agent, requests, usage, catalog, onChanged }: { agent: Agen
           {agent.model.model ? ` · ${agent.model.model}` : ""}
         </p>
         <p className="mt-0.5 text-text-soft">{agent.model.note}</p>
-        {(agent.model.routes?.length ?? 0) > 0 && (
-          <div className="mt-3">
-            <p className="text-[11.5px] font-bold uppercase tracking-wide text-text-faint">Quel modèle pour quelle demande</p>
-            <ul className="mt-1.5 space-y-1.5">
-              {agent.model.routes!.map((r) => (
-                <li key={r.task} className="rounded-lg bg-surface px-3 py-2 text-[12.5px] text-text-soft">
-                  {r.task}
-                  <span className="block font-semibold text-text">→ {r.model ?? "Sans modèle IA : lecture ou calcul direct (0 token)"}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
         {usage && usage.calls > 0 && (
           <p className="mt-2 text-[12.5px] text-text-soft">
             Consommation : <span className="font-semibold text-text">{fmtNum(usage.tokens_in + usage.tokens_out)} tokens</span> · {usage.calls} appel{usage.calls > 1 ? "s" : ""} · <span className="font-semibold text-text">{fmtUsd(usage.usd)}</span>
@@ -189,6 +176,57 @@ function ModelRequestForm({ agent, catalog, onSent }: { agent: Agent; catalog: A
 }
 
 type Found = { title: string; summary: string; why: string; sources: string[] };
+type Used = { model: string; calls: number; tokens: number; usd: number };
+type Panel = { who: string; asked: string; text: string; found: Found[]; sources: string[]; used: Used[]; analysis?: string };
+
+// Half-page sheet for an agent's answer: closes with the cross, the backdrop or Escape.
+function ResponseSheet({ panel, onClose, children }: { panel: Panel; onClose: () => void; children?: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/30" onClick={onClose}>
+      <div role="dialog" aria-label={`Réponse : ${panel.who}`} onClick={(e) => e.stopPropagation()} className="flex max-h-[60vh] w-full max-w-3xl flex-col rounded-t-2xl bg-surface shadow-2xl md:max-h-[55vh]">
+        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
+          <div className="min-w-0">
+            <p className="font-display text-[18px] italic">{panel.who}</p>
+            <p className="truncate text-[12px] text-text-faint">{panel.asked}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Fermer" className="shrink-0 rounded-full border border-border-strong px-3 py-1.5 text-[13px] font-semibold text-text-soft hover:border-accent">✕ Fermer</button>
+        </div>
+        <div className="space-y-3 overflow-y-auto px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
+          <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-text">{panel.text}</p>
+          {panel.found.map((f, i) => (
+            <div key={i} className="rounded-xl border border-border p-3.5 text-[13px]">
+              <p className="font-semibold text-text">{f.title}</p>
+              {f.summary && <p className="mt-1 text-text-soft">{f.summary}</p>}
+              {f.why && <p className="mt-1 text-text-faint">Pourquoi c&rsquo;est utile : {f.why}</p>}
+              <Sources urls={f.sources} />
+            </div>
+          ))}
+          <Sources urls={panel.sources} />
+          {children}
+          {panel.used.length > 0 && (
+            <p className="border-t border-border pt-2.5 text-[12px] text-text-faint">
+              Modèles utilisés pour cette réponse : {panel.used.map((u) => `${u.model} (${u.calls} appel${u.calls > 1 ? "s" : ""}, ${fmtNum(u.tokens)} tokens, ${fmtUsd(u.usd)})`).join(" · ")}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Sources({ urls }: { urls: string[] }) {
+  if (urls.length === 0) return null;
+  return (
+    <p className="text-[12px]">
+      {urls.map((u, j) => <a key={u} href={u} target="_blank" rel="noreferrer" className="mr-2 font-semibold text-accent-strong hover:underline">source {j + 1}</a>)}
+    </p>
+  );
+}
 
 function DirectRequest({ agent, onDone }: { agent: Agent; onDone: () => Promise<void> }) {
   const [text, setText] = useState("");
@@ -196,9 +234,10 @@ function DirectRequest({ agent, onDone }: { agent: Agent; onDone: () => Promise<
   const [tool, setTool] = useState("");
   const [tools, setTools] = useState<{ key: string; label: string }[]>([]);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [found, setFound] = useState<Found[]>([]);
-  const [answer, setAnswer] = useState<{ answer: string; sources: string[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [panel, setPanel] = useState<Panel | null>(null);
+  const [relay, setRelay] = useState("");
+  const [relaying, setRelaying] = useState(false);
 
   useEffect(() => {
     if (agent.key !== "guide") return;
@@ -210,30 +249,75 @@ function DirectRequest({ agent, onDone }: { agent: Agent; onDone: () => Promise<
       .catch(() => undefined);
   }, [agent.key]);
 
-  async function run(job: () => Promise<void>) {
+  async function run(job: () => Promise<Panel>) {
     setBusy(true);
-    setMessage(null);
-    setFound([]);
-    setAnswer(null);
+    setError(null);
     try {
-      await job();
+      setPanel(await job());
       await onDone();
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Échec");
+      setError(e instanceof Error ? e.message : "Échec");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function veilleurAsk(request: string, followTopic: boolean, context?: string): Promise<Panel> {
+    const r = await agentsCall<{ message: string; found: Found[]; used?: Used[] }>("/veilleur/ask", "POST", { request, follow: followTopic, context });
+    return { who: "Veilleur", asked: request, text: r.message, found: r.found, sources: [], used: r.used ?? [] };
   }
 
   if (agent.key === "analyste") {
     return (
       <div>
         <p className="text-[11.5px] font-bold uppercase tracking-wide text-text-faint">Lui demander</p>
-        <p className="mt-1 text-[12.5px] text-text-soft">L&rsquo;Analyste relit tous vos chiffres (ventes, achats, clients, produits) et signale les risques et opportunités.</p>
-        <Button className="mt-2.5" loading={busy} onClick={() => void run(async () => { const r = await agentsCall<{ message: string }>("/analyste/run"); setMessage(r.message); })}>
+        <p className="mt-1 text-[12.5px] text-text-soft">L&rsquo;Analyste relit tous vos chiffres (ventes, achats, clients, produits) et résume ce qui a changé depuis la dernière analyse.</p>
+        <Button
+          className="mt-2.5"
+          loading={busy}
+          onClick={() =>
+            void run(async () => {
+              const r = await agentsCall<{ message: string; summary?: string }>("/analyste/run");
+              const summary = r.summary ?? r.message;
+              setRelay("Cherche sur le web et dans les sites utiles ce qui peut m'aider à traiter ces points.");
+              return { who: "Analyste", asked: "Analyse de vos données", text: summary, found: [], sources: [], used: [], analysis: summary };
+            })
+          }
+        >
           Lancer l&rsquo;analyse maintenant
         </Button>
-        {message && <p className="mt-2 text-[13px] text-text-soft">{message}</p>}
+        {error && <p className="mt-2 text-[13px] text-danger">{error}</p>}
+        {panel && (
+          <ResponseSheet panel={panel} onClose={() => setPanel(null)}>
+            {panel.analysis && (
+              <div className="rounded-xl bg-surface-sunken p-3.5">
+                <p className="text-[12.5px] font-semibold text-text">Transmettre cette analyse au Veilleur</p>
+                <textarea value={relay} onChange={(e) => setRelay(e.target.value)} rows={2} className="mt-2 w-full rounded-lg border-[1.5px] border-border-strong bg-surface px-3 py-2 text-[13px]" />
+                <Button
+                  className="mt-2"
+                  loading={relaying}
+                  disabled={relay.trim().length < 3}
+                  onClick={async () => {
+                    setRelaying(true);
+                    setError(null);
+                    try {
+                      setPanel(await veilleurAsk(relay.trim(), false, panel.analysis));
+                      await onDone();
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : "Échec");
+                    } finally {
+                      setRelaying(false);
+                    }
+                  }}
+                >
+                  Transmettre au Veilleur
+                </Button>
+                {relaying && <p className="mt-2 text-[12.5px] text-text-faint">Le Veilleur travaille sur l&rsquo;analyse, cela peut prendre une minute…</p>}
+                {error && <p className="mt-2 text-[12.5px] text-danger">{error}</p>}
+              </div>
+            )}
+          </ResponseSheet>
+        )}
       </div>
     );
   }
@@ -267,14 +351,9 @@ function DirectRequest({ agent, onDone }: { agent: Agent; onDone: () => Promise<
         disabled={disabled || (agent.key === "guide" && !tool)}
         onClick={() =>
           void run(async () => {
-            if (agent.key === "veilleur") {
-              const r = await agentsCall<{ message: string; found: Found[] }>("/veilleur/ask", "POST", { request: text.trim(), follow });
-              setMessage(r.message);
-              setFound(r.found);
-            } else {
-              const r = await askToolGuide(tool, text.trim());
-              setAnswer(r);
-            }
+            if (agent.key === "veilleur") return veilleurAsk(text.trim(), follow);
+            const r = await askToolGuide(tool, text.trim());
+            return { who: "Guide de connexion", asked: text.trim(), text: r.answer, found: [], sources: r.sources, used: (r as { used?: Used[] }).used ?? [] };
           })
         }
       >
@@ -282,29 +361,8 @@ function DirectRequest({ agent, onDone }: { agent: Agent; onDone: () => Promise<
       </Button>
       {!agent.configured && <p className="mt-2 text-[12.5px] text-text-faint">Cet agent attend une clé de recherche web (OPENROUTER_API_KEY) pour répondre.</p>}
       {busy && <p className="mt-2 text-[12.5px] text-text-faint">Recherche en cours, cela peut prendre une minute…</p>}
-      {message && <p className="mt-3 whitespace-pre-wrap rounded-xl bg-surface-sunken p-3.5 text-[13.5px] leading-relaxed text-text">{message}</p>}
-      {found.map((f, i) => (
-        <div key={i} className="mt-2 rounded-xl border border-border p-3.5 text-[13px]">
-          <p className="font-semibold text-text">{f.title}</p>
-          {f.summary && <p className="mt-1 text-text-soft">{f.summary}</p>}
-          {f.why && <p className="mt-1 text-text-faint">Pourquoi c&rsquo;est utile : {f.why}</p>}
-          {f.sources.length > 0 && (
-            <p className="mt-1.5 text-[12px]">
-              {f.sources.map((u, j) => <a key={u} href={u} target="_blank" rel="noreferrer" className="mr-2 font-semibold text-accent-strong hover:underline">source {j + 1}</a>)}
-            </p>
-          )}
-        </div>
-      ))}
-      {answer && (
-        <div className="mt-2 rounded-xl border border-border p-3.5 text-[13px] text-text-soft">
-          <p className="whitespace-pre-line">{answer.answer}</p>
-          {answer.sources.length > 0 && (
-            <p className="mt-2 text-[12px]">
-              {answer.sources.map((u, j) => <a key={u} href={u} target="_blank" rel="noreferrer" className="mr-2 font-semibold text-accent-strong hover:underline">source {j + 1}</a>)}
-            </p>
-          )}
-        </div>
-      )}
+      {error && <p className="mt-2 text-[13px] text-danger">{error}</p>}
+      {panel && <ResponseSheet panel={panel} onClose={() => setPanel(null)} />}
     </div>
   );
 }

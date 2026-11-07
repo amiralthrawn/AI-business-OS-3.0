@@ -122,6 +122,11 @@ def analyste_digest(session: Session, company_id, terms: list[str]) -> str:
         cus = session.query(Customer.name, Customer.status).filter(Customer.company_id == company_id, Customer.name.ilike(like)).limit(4).all()
         lines.append(f"« {term} » : " + ("; ".join(f"produit {p.name} ({p.sku or '—'}, coût {p.unit_cost if p.unit_cost is not None else '?'}, prix de vente {p.sale_price if p.sale_price is not None else '?'})" for p in found) or "aucun produit")
                      + (" | fournisseurs : " + ", ".join(f"{n} ({c or '?'})" for n, c in sup) if sup else "") + (" | clients : " + ", ".join(f"{n} ({s})" for n, s in cus) if cus else ""))
+    from app.agents import service
+
+    last = service.last_analysis(session, company_id)
+    if last:
+        lines.append(f"Dernière analyse de l'Analyste : {last['summary']}")
     return "\n".join(lines)
 
 

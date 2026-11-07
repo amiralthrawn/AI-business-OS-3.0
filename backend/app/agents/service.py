@@ -12,6 +12,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.agents import perplexity, veilleur, veilleur_agent
@@ -222,6 +223,18 @@ def _cost(entry: dict) -> float:
     return (entry["tin"] * price["in"] + entry["tout"] * price["out"]) / 1_000_000 + price["request"]
 
 
+def used_summary(entries: list[dict]) -> list[dict]:
+    """Which models answered one request, with tokens and cost."""
+
+    by: dict[str, dict] = {}
+    for e in entries:
+        row = by.setdefault(e["model"], {"model": e["model"], "calls": 0, "tokens": 0, "usd": 0.0})
+        row["calls"] += 1
+        row["tokens"] += e["tin"] + e["tout"]
+        row["usd"] = round(row["usd"] + _cost(e), 6)
+    return list(by.values())
+
+
 def _book_usage(session: Session, company_id: uuid.UUID, agent: str, entries: list[dict]) -> None:
     if not entries:
         return
@@ -262,12 +275,12 @@ def usage_summary(session: Session, company_id: uuid.UUID) -> dict:
     }
 
 
-def ask_veilleur(session: Session, company: Company, request: str, follow: bool) -> dict:
+def ask_veilleur(session: Session, company: Company, request: str, follow: bool, context: str | None = None) -> dict:
     """A direct request to the Veilleur: search this subject now, return what
     was found, and (optionally) keep following it."""
 
     if veilleur_agent.enabled():
-        return _ask_veilleur_agent(session, company, request, follow)
+        return _ask_veilleur_agent(session, company, request, follow, context)
     if not perplexity.configured():
         log_run(session, company.id, "veilleur", "not_configured", f"Demande : {request[:120]} : aucune clé de recherche.")
         return {"status": "not_configured", "found": [], "message": "Aucune clé de recherche web n'est renseignée : le Veilleur ne peut pas chercher."}
@@ -290,21 +303,22 @@ def ask_veilleur(session: Session, company: Company, request: str, follow: bool)
     return {"status": "ok", "found": shown, "message": message}
 
 
-def _ask_veilleur_agent(session: Session, company: Company, request: str, follow: bool) -> dict:
+def _ask_veilleur_agent(session: Session, company: Company, request: str, follow: bool, context: str | None = None) -> dict:
     if follow:
         set_watch_topics(session, company.id, [*get_settings(session, company.id)["watch_topics"], request])
     config = config_service.get_configuration(session, company.id)
     profile = veilleur.profile_text(company.name, company.website_url, config_service.ai_profile(config), knowledge(session, company.id))
     perplexity.drain_usage()
     try:
-        out = veilleur_agent.run(session, company, profile, request, lambda item, sources: _ingest(session, company, item, sources))
+        out = veilleur_agent.run(session, company, profile, (f"Analyse transmise par l'Analyste (à utiliser pour orienter ta recherche) :\n{context.strip()[:4000]}\n\nDemande : {request}" if context and context.strip() else request), lambda item, sources: _ingest(session, company, item, sources))
     except perplexity.PerplexityError as exc:
         session.rollback()
         log_run(session, company.id, "veilleur", "error", f"Demande : {request[:120]} : {str(exc)[:200]}")
         return {"status": "error", "found": [], "message": str(exc)[:300]}
     session.commit()
+    used = used_summary(perplexity.peek_usage())
     log_run(session, company.id, "veilleur", "ok", f"Demande : {request[:140]} ({len(out['found'])} information(s) enregistrée(s))", len(out["found"]))
-    return {"status": "ok", "found": out["found"], "message": out["answer"] or "Recherche terminée."}
+    return {"status": "ok", "found": out["found"], "message": out["answer"] or "Recherche terminée.", "used": used}
 
 
 # --- running agents -----------------------------------------------------------
@@ -355,17 +369,75 @@ def run_veilleur(session: Session, company: Company) -> AgentRun:
     return run
 
 
+def _situation(session: Session, company_id: uuid.UUID) -> dict:
+    from app.core.entities import Opportunity, Risk
+
+    risks = session.query(Risk.id, Risk.title).filter(Risk.company_id == company_id).all()
+    opps = session.query(Opportunity.id, Opportunity.title).filter(Opportunity.company_id == company_id).all()
+    return {
+        "risks": {str(i): t for i, t in risks[-500:]}, "opportunities": {str(i): t for i, t in opps[-500:]},
+        "transactions": session.query(func.count(Transaction.id)).filter_by(company_id=company_id).scalar() or 0,
+        "products": session.query(func.count(Product.id)).filter_by(company_id=company_id).scalar() or 0,
+        "customers": session.query(func.count(Customer.id)).filter_by(company_id=company_id).scalar() or 0,
+    }
+
+
+def _plural(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
+def analyste_summary(before: dict | None, after: dict, at: str | None) -> tuple[bool, str]:
+    """(changed, 2-3 sentences). Deterministic: every claim is a difference
+    between the two recorded situations."""
+
+    when = datetime.fromisoformat(at).astimezone(PARIS).strftime("%d/%m à %H:%M") if at else None
+    if before is None:
+        return True, (f"Première analyse : {_plural(len(after['risks']), 'risque', 'risques')} et {_plural(len(after['opportunities']), 'opportunité', 'opportunités')} repéré(e)s "
+                      f"sur {_plural(after['transactions'], 'transaction', 'transactions')}, {_plural(after['products'], 'produit', 'produits')} et {_plural(after['customers'], 'client', 'clients')}.")
+    new_risks = [t for i, t in after["risks"].items() if i not in before.get("risks", {})]
+    new_opps = [t for i, t in after["opportunities"].items() if i not in before.get("opportunities", {})]
+    grown = {k: after[k] - before.get(k, 0) for k in ("transactions", "products", "customers")}
+    if not new_risks and not new_opps and not any(grown.values()):
+        return False, f"Rien n'a changé depuis la dernière analyse ({when}) : aucun nouveau risque ni opportunité, et vos données sont les mêmes."
+    parts = []
+    if new_risks:
+        parts.append(f"{_plural(len(new_risks), 'nouveau risque', 'nouveaux risques')} : {'; '.join(new_risks[:3])}.")
+    if new_opps:
+        parts.append(f"{_plural(len(new_opps), 'nouvelle opportunité', 'nouvelles opportunités')} : {'; '.join(new_opps[:3])}.")
+    data = [f"{'+' if v > 0 else ''}{v} {label}" for v, label in ((grown["transactions"], "transaction(s)"), (grown["products"], "produit(s)"), (grown["customers"], "client(s)")) if v]
+    if data:
+        parts.append(f"Vos données ont évolué depuis le {when} : {', '.join(data)}.")
+    if not new_risks and not new_opps:
+        parts.append("Aucun nouveau risque ni opportunité n'en découle pour l'instant.")
+    else:
+        parts.append(f"Au total : {_plural(len(after['risks']), 'risque', 'risques')} et {_plural(len(after['opportunities']), 'opportunité', 'opportunités')} suivi(e)s.")
+    return True, " ".join(parts)
+
+
+def last_analysis(session: Session, company_id: uuid.UUID) -> dict | None:
+    return (config_service.get_configuration(session, company_id).get("agents") or {}).get("analyste_last")
+
+
 def run_analyste(session: Session, company: Company) -> AgentRun:
     from app.event_bus import event_bus
     from app.core.events.tenant import TenantEventBus
     from app.intelligence.monitoring import run_monitoring_sweep
 
+    previous = last_analysis(session, company.id)
     run = AgentRun(company_id=company.id, agent="analyste", status="ok", found=0)
     session.add(run)
     result = run_monitoring_sweep(session, TenantEventBus(event_bus, company.id))
     run.found = result["risks_created"] + result["opportunities_created"]
-    run.message = f"{result['risks_created']} risque(s), {result['opportunities_created']} opportunité(s)" if run.found else "Rien de nouveau dans vos chiffres"
+    after = _situation(session, company.id)
+    changed, summary = analyste_summary(previous["situation"] if previous else None, after, previous["at"] if previous else None)
+    run.message = summary[:400]
     run.finished_at = now()
+    context = BusinessContextService(session).get_or_create(company.id)
+    config = dict(context.configuration or {})
+    agents = dict(config.get("agents") or {})
+    agents["analyste_last"] = {"at": now().isoformat(), "summary": summary, "changed": changed, "situation": after}
+    config["agents"] = agents
+    context.configuration = config
     session.commit()
     return run
 

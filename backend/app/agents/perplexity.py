@@ -40,6 +40,10 @@ def _record(model: str, usage: object) -> None:
     bucket.append(entry)
 
 
+def peek_usage() -> list[dict]:
+    return list(_USAGE.get() or [])
+
+
 def drain_usage() -> list[dict]:
     bucket = _USAGE.get() or []
     _USAGE.set([])

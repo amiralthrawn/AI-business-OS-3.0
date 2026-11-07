@@ -39,6 +39,7 @@ class ModelRequestIn(BaseModel):
 class VeilleurAskIn(BaseModel):
     request: str = Field(min_length=3, max_length=3000)
     follow: bool = False
+    context: str | None = Field(default=None, max_length=6000)
 
 
 class AnswerIn(BaseModel):
@@ -126,7 +127,7 @@ def post_model_request(payload: ModelRequestIn, db: Session = Depends(get_db), _
 
 @router.post("/veilleur/ask")
 def ask_veilleur(payload: VeilleurAskIn, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
-    return service.ask_veilleur(db, _company(db), payload.request.strip(), payload.follow)
+    return service.ask_veilleur(db, _company(db), payload.request.strip(), payload.follow, payload.context)
 
 
 @router.post("/{agent}/run")
@@ -138,7 +139,11 @@ def run_agent(agent: str, db: Session = Depends(get_db), _user: CurrentUser = De
         run = service.run_analyste(db, company)
     else:
         raise HTTPException(status_code=404, detail=tx("Agent inconnu", "Unknown agent"))
-    return {"status": run.status, "found": run.found, "message": run.message}
+    extra = {}
+    if agent == "analyste":
+        last = service.last_analysis(db, company.id) or {}
+        extra = {"summary": last.get("summary"), "changed": last.get("changed", True)}
+    return {"status": run.status, "found": run.found, "message": run.message, **extra}
 
 
 @router.post("/proposals/{proposal_id}/accept")

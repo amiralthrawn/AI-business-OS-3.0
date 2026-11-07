@@ -272,3 +272,28 @@ def test_read_page_refuses_private_addresses():
 
     text, url = veilleur_agent.read_page("http://127.0.0.1:8000/secret")
     assert url is None and "publique" in text
+
+
+def test_analyste_tells_what_changed_since_the_last_analysis(client):
+    headers = _director(client, "Ana Co", "ana@co.example")
+    first = client.post("/agents/analyste/run", headers=headers).json()
+    assert first["changed"] is True and first["summary"].startswith("Première analyse")
+    second = client.post("/agents/analyste/run", headers=headers).json()
+    assert second["changed"] is False and "Rien n'a changé" in second["summary"]
+    client.post("/catalog/products", headers=headers, json={"name": "Nouveau", "sku": "N1"})
+    third = client.post("/agents/analyste/run", headers=headers).json()
+    assert third["changed"] is True and "produit" in third["summary"]
+
+
+def test_context_from_the_analyste_reaches_the_veilleur(client, monkeypatch):
+    from app.agents import veilleur_agent
+
+    headers = _director(client, "Ctx Co", "ctx@co.example")
+    monkeypatch.setattr(get_settings(), "openrouter_api_key", "k")
+    seen = {}
+    def fake_run(session, company, profile, request, save):
+        seen["request"] = request
+        return {"answer": "ok", "found": []}
+    monkeypatch.setattr(veilleur_agent, "run", fake_run)
+    res = client.post("/agents/veilleur/ask", headers=headers, json={"request": "Creuse ce point", "follow": False, "context": "Marge en baisse sur STM32"}).json()
+    assert res["status"] == "ok" and "Marge en baisse sur STM32" in seen["request"] and "Creuse ce point" in seen["request"]
