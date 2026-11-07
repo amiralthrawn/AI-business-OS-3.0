@@ -646,6 +646,17 @@ export type AgentsOverview = {
 };
 
 export const getAgentsOverview = () => getJSON<AgentsOverview>("/agents/overview", "Agents indisponibles");
+// FastAPI sends `detail` as a string, or as a list of problems on a 422.
+export function errorText(detail: unknown, fallback: string): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const first = detail[0] as { msg?: string; type?: string; loc?: unknown[] } | undefined;
+    if (first?.type === "string_too_long") return "Votre texte est trop long : raccourcissez-le ou envoyez-le en plusieurs demandes.";
+    if (first?.type === "string_too_short") return "Votre texte est trop court.";
+    if (first?.msg) return first.msg;
+  }
+  return fallback;
+}
 export async function agentsCall<T = unknown>(path: string, method = "POST", body?: unknown): Promise<T> {
   const res = await apiFetch(`${API_URL}/agents${path}`, {
     method,
@@ -655,7 +666,7 @@ export async function agentsCall<T = unknown>(path: string, method = "POST", bod
   });
   if (!res.ok) {
     const err = await res.json().catch(() => null);
-    throw new Error(err?.detail ?? `Échec (${res.status})`);
+    throw new Error(errorText(err?.detail, `Échec (${res.status})`));
   }
   return res.json();
 }

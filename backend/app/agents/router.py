@@ -37,7 +37,7 @@ class ModelRequestIn(BaseModel):
 
 
 class VeilleurAskIn(BaseModel):
-    request: str = Field(min_length=3, max_length=500)
+    request: str = Field(min_length=3, max_length=3000)
     follow: bool = False
 
 
