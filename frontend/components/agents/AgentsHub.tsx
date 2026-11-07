@@ -116,6 +116,7 @@ function AgentCard({ agent, requests, usage, catalog, onChanged }: { agent: Agen
         )}
       </div>
 
+      <MemoryLine agent={agent} onChanged={onChanged} />
       <DirectRequest agent={agent} onDone={onChanged} />
     </Card>
   );
@@ -172,6 +173,36 @@ function ModelRequestForm({ agent, catalog, onSent }: { agent: Agent; catalog: A
       </div>
       <p className="text-[11.5px] text-text-faint">Notre équipe reçoit votre demande et change ou améliore la solution IA pour vous, sous 24 h ou plus vite.</p>
     </div>
+  );
+}
+
+function MemoryLine({ agent, onChanged }: { agent: Agent; onChanged: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const n = agent.memory_count ?? 0;
+  return (
+    <p className="text-[12.5px] text-text-soft">
+      <span className="font-bold uppercase tracking-wide text-text-faint text-[11.5px]">Mémoire</span>{" "}
+      {n === 0 ? "Rien de retenu pour l'instant." : `${n} échange${n > 1 ? "s" : ""} retenu${n > 1 ? "s" : ""} : l'agent s'en sert pour ses prochaines réponses.`}
+      {n > 0 && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            if (!window.confirm("Effacer la mémoire de cet agent ?")) return;
+            setBusy(true);
+            try {
+              await agentsCall(`/memory/${agent.key}`, "DELETE");
+              await onChanged();
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="ml-2 font-semibold text-accent-strong hover:underline"
+        >
+          Effacer
+        </button>
+      )}
+    </p>
   );
 }
 

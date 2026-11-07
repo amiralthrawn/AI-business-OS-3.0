@@ -83,7 +83,7 @@ def overview(db: Session = Depends(get_db), user: CurrentUser = Depends(get_curr
         configured = perplexity.configured() if key in ("veilleur", "guide") else True
         agents.append({
             "key": key, "label": label, "description": description, "configured": configured,
-            "model": service.model_in_use(key), "recent_runs": service.recent_runs(db, company.id, key),
+            "model": service.model_in_use(key), "memory_count": len(service.memory_items(db, company.id, key)), "recent_runs": service.recent_runs(db, company.id, key),
             "last_status": run.status if run else None, "last_message": run.message if run else None,
             "last_run_at": run.created_at.isoformat() if run else None,
         })
@@ -144,6 +144,13 @@ def run_agent(agent: str, db: Session = Depends(get_db), _user: CurrentUser = De
         last = service.last_analysis(db, company.id) or {}
         extra = {"summary": last.get("summary"), "changed": last.get("changed", True)}
     return {"status": run.status, "found": run.found, "message": run.message, **extra}
+
+
+@router.delete("/memory/{agent}", status_code=204)
+def forget_memory(agent: str, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> None:
+    if agent not in LABELS:
+        raise HTTPException(status_code=404, detail=tx("Agent inconnu", "Unknown agent"))
+    service.forget(db, _company(db).id, agent)
 
 
 @router.post("/proposals/{proposal_id}/accept")

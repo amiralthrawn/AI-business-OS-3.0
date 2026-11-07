@@ -166,15 +166,18 @@ def ask(session: Session, company_id: uuid.UUID, tool_key: str, question: str) -
     question = question.strip()[:MAX_QUESTION]
     if not perplexity.configured():
         return {"answer": "Je ne peux pas chercher sur le web pour le moment (recherche non configurée). Utilisez les instructions générales de la page.", "sources": [], "grounded": False}
+    from app.agents import service as agents_service
+
+    past = agents_service.recall(session, company_id, "guide", n=4, only=label)
+    system = _ASK_SYSTEM + (f"\nÉchanges précédents avec ce client sur ce logiciel (n'y reviens pas, complète) :\n{past}" if past else "")
     try:
-        text, sources = perplexity.ask(_ASK_SYSTEM, f"Logiciel : {label} ({category.label}).\nQuestion du client : {question}")
+        text, sources = perplexity.ask(system, f"Logiciel : {label} ({category.label}).\nQuestion du client : {question}")
     except perplexity.PerplexityError:
         return {"answer": "La recherche est momentanément indisponible. Réessayez dans un instant.", "sources": [], "grounded": False}
     if not sources:
         return {"answer": "Je n'ai trouvé aucune source fiable pour répondre à cette question, donc je préfère ne pas deviner. Voulez-vous que nous vous aidions directement ?", "sources": [], "grounded": False}
-    from app.agents import service as agents_service
-
     used = agents_service.used_summary(perplexity.peek_usage())
+    agents_service.remember(session, company_id, "guide", f"{label} : {question}", text)
     _log(session, company_id, "ok", f"Question sur {label} : {question[:100]}", 1)
     return {"answer": text.strip()[:1500], "sources": sources[:5], "grounded": True, "used": used}
 

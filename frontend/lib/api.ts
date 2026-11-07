@@ -637,6 +637,7 @@ export type AgentsOverview = {
   agents: {
     key: string; label: string; description: string; configured: boolean; last_status: string | null; last_message: string | null; last_run_at: string | null;
     model: { provider: string | null; model: string | null; kind: string; note: string; routes?: { task: string; model: string | null }[] };
+    memory_count?: number;
     recent_runs?: { status: string; found: number; message: string | null; at: string }[];
   }[];
   usage?: AgentsUsage | null;
@@ -668,6 +669,7 @@ export async function agentsCall<T = unknown>(path: string, method = "POST", bod
     const err = await res.json().catch(() => null);
     throw new Error(errorText(err?.detail, `Échec (${res.status})`));
   }
+  if (res.status === 204) return undefined as T;
   return res.json();
 }
 

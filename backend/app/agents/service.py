@@ -156,6 +156,52 @@ def _model_in_use(agent: str, settings) -> dict:
     return {"provider": None, "model": None, "kind": "web_search", "note": "Aucune clé de recherche renseignée : cet agent ne peut pas chercher."}
 
 
+# --- memory: what each agent keeps of its previous exchanges ----------------------
+
+MEMORY_KEEP = 30
+
+
+def remember(session: Session, company_id: uuid.UUID, agent: str, request: str, answer: str, saved: list[str] | None = None) -> None:
+    context = BusinessContextService(session).get_or_create(company_id)
+    config = dict(context.configuration or {})
+    agents = dict(config.get("agents") or {})
+    memory = dict(agents.get("memory") or {})
+    entry = {"at": now().isoformat(), "request": " ".join(request.split())[:300], "answer": " ".join(answer.split())[:700], "saved": [t[:120] for t in (saved or [])[:6]]}
+    memory[agent] = [*(memory.get(agent) or []), entry][-MEMORY_KEEP:]
+    agents["memory"] = memory
+    config["agents"] = agents
+    context.configuration = config
+    session.commit()
+
+
+def memory_items(session: Session, company_id: uuid.UUID, agent: str) -> list[dict]:
+    return list(((config_service.get_configuration(session, company_id).get("agents") or {}).get("memory") or {}).get(agent) or [])
+
+
+def recall(session: Session, company_id: uuid.UUID, agent: str, n: int = 6, only: str | None = None) -> str:
+    """The latest exchanges, as text an agent can read before it answers."""
+
+    items = [i for i in memory_items(session, company_id, agent) if not only or only.lower() in i["request"].lower()][-n:]
+    if not items:
+        return ""
+    return "\n".join(
+        f"- {datetime.fromisoformat(i['at']).astimezone(PARIS).strftime('%d/%m')} : demande « {i['request']} » -> {i['answer']}" + (f" (enregistré : {'; '.join(i['saved'])})" if i.get("saved") else "")
+        for i in items
+    )
+
+
+def forget(session: Session, company_id: uuid.UUID, agent: str) -> None:
+    context = BusinessContextService(session).get_or_create(company_id)
+    config = dict(context.configuration or {})
+    agents = dict(config.get("agents") or {})
+    memory = dict(agents.get("memory") or {})
+    memory.pop(agent, None)
+    agents["memory"] = memory
+    config["agents"] = agents
+    context.configuration = config
+    session.commit()
+
+
 def model_requests(session: Session, company_id: uuid.UUID) -> list[dict]:
     saved = config_service.get_configuration(session, company_id).get("agents") or {}
     return list(saved.get("model_requests") or [])[-20:]
@@ -308,6 +354,12 @@ def _ask_veilleur_agent(session: Session, company: Company, request: str, follow
         set_watch_topics(session, company.id, [*get_settings(session, company.id)["watch_topics"], request])
     config = config_service.get_configuration(session, company.id)
     profile = veilleur.profile_text(company.name, company.website_url, config_service.ai_profile(config), knowledge(session, company.id))
+    past = recall(session, company.id, "veilleur")
+    if past:
+        profile += f"\n\nMémoire de tes échanges précédents avec ce client (appuie-toi dessus, ne refais pas ce qui est déjà fait, signale ce qui a changé) :\n{past}"
+    analyse = last_analysis(session, company.id)
+    if analyse and not context:
+        profile += f"\n\nDernière analyse de l'Analyste : {analyse['summary']}"
     perplexity.drain_usage()
     try:
         out = veilleur_agent.run(session, company, profile, (f"Analyse transmise par l'Analyste (à utiliser pour orienter ta recherche) :\n{context.strip()[:4000]}\n\nDemande : {request}" if context and context.strip() else request), lambda item, sources: _ingest(session, company, item, sources))
@@ -317,6 +369,7 @@ def _ask_veilleur_agent(session: Session, company: Company, request: str, follow
         return {"status": "error", "found": [], "message": str(exc)[:300]}
     session.commit()
     used = used_summary(perplexity.peek_usage())
+    remember(session, company.id, "veilleur", request, out["answer"], [f["title"] for f in out["found"]])
     log_run(session, company.id, "veilleur", "ok", f"Demande : {request[:140]} ({len(out['found'])} information(s) enregistrée(s))", len(out["found"]))
     return {"status": "ok", "found": out["found"], "message": out["answer"] or "Recherche terminée.", "used": used}
 
@@ -439,6 +492,7 @@ def run_analyste(session: Session, company: Company) -> AgentRun:
     config["agents"] = agents
     context.configuration = config
     session.commit()
+    remember(session, company.id, "analyste", "Analyse de vos données", summary)
     return run
 
 

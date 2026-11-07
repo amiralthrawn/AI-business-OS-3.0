@@ -297,3 +297,24 @@ def test_context_from_the_analyste_reaches_the_veilleur(client, monkeypatch):
     monkeypatch.setattr(veilleur_agent, "run", fake_run)
     res = client.post("/agents/veilleur/ask", headers=headers, json={"request": "Creuse ce point", "follow": False, "context": "Marge en baisse sur STM32"}).json()
     assert res["status"] == "ok" and "Marge en baisse sur STM32" in seen["request"] and "Creuse ce point" in seen["request"]
+
+
+def test_agents_remember_their_exchanges_and_the_client_can_clear_them(client, monkeypatch):
+    from app.agents import veilleur_agent
+
+    headers = _director(client, "Mem Co", "mem@co.example")
+    monkeypatch.setattr(get_settings(), "openrouter_api_key", "k")
+    profiles = []
+    def fake_run(session, company, profile, request, save):
+        profiles.append(profile)
+        return {"answer": "Prix relevés chez OEMsTrade.", "found": [{"title": "Prix STM32", "summary": "", "why": "", "sources": []}]}
+    monkeypatch.setattr(veilleur_agent, "run", fake_run)
+    client.post("/agents/veilleur/ask", headers=headers, json={"request": "Compare OEMsTrade", "follow": False})
+    client.post("/agents/veilleur/ask", headers=headers, json={"request": "Et Accuris ?", "follow": False})
+    assert "Mémoire" not in profiles[0] and "Compare OEMsTrade" in profiles[1] and "Prix STM32" in profiles[1]
+    client.post("/agents/analyste/run", headers=headers)
+    agents = {a["key"]: a for a in client.get("/agents/overview", headers=headers).json()["agents"]}
+    assert agents["veilleur"]["memory_count"] == 2 and agents["analyste"]["memory_count"] == 1
+    assert client.delete("/agents/memory/veilleur", headers=headers).status_code == 204
+    agents = {a["key"]: a for a in client.get("/agents/overview", headers=headers).json()["agents"]}
+    assert agents["veilleur"]["memory_count"] == 0
