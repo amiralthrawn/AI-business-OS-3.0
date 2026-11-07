@@ -262,7 +262,7 @@ def test_veilleur_is_an_agent_that_reads_asks_the_analyste_and_saves(client, mon
     res = client.post("/agents/veilleur/ask", headers=headers, json={"request": "Compare mes prix avec OEMsTrade " * 30, "follow": False}).json()
     assert res["status"] == "ok" and res["message"].startswith("J'ai enregistré")
     assert len(res["found"]) == 1 and res["found"][0]["sources"] == ["https://www.oemstrade.com/x"]  # the invented source is dropped
-    assert seen_tools[1].startswith("Données du logiciel")  # the Analyste answered from the company data
+    assert seen_tools[1].startswith("## Vue d'ensemble")  # the Analyste answered from the company data
     props = client.get("/agents/overview", headers=headers).json()["proposals"]
     assert any(p["title"] == "Prix STM32F4 chez OEMsTrade" for p in props)
 
@@ -318,3 +318,18 @@ def test_agents_remember_their_exchanges_and_the_client_can_clear_them(client, m
     assert client.delete("/agents/memory/veilleur", headers=headers).status_code == 204
     agents = {a["key"]: a for a in client.get("/agents/overview", headers=headers).json()["agents"]}
     assert agents["veilleur"]["memory_count"] == 0
+
+
+def test_full_analysis_is_handed_to_the_veilleur(client, monkeypatch):
+    from app.agents import veilleur_agent
+
+    headers = _director(client, "Dos Co", "dos@co.example")
+    client.post("/catalog/products", headers=headers, json={"name": "Microcontrôleur STM32F4", "sku": "STM32F4"})
+    client.post("/agents/analyste/run", headers=headers)
+    monkeypatch.setattr(get_settings(), "openrouter_api_key", "k")
+    seen = {}
+    monkeypatch.setattr(veilleur_agent, "run", lambda session, company, profile, request, save: seen.update(request=request) or {"answer": "ok", "found": []})
+    res = client.post("/agents/veilleur/ask", headers=headers, json={"request": "Compare les prix du STM32F4", "follow": False, "with_analysis": True}).json()
+    assert res["shared_chars"] > 200
+    for part in ("## Vue d'ensemble", "## Risques détectés", "## Éléments de vos données liés à la demande", "STM32F4", "Résumé de la dernière analyse"):
+        assert part in seen["request"]

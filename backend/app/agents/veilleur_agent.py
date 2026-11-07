@@ -14,12 +14,10 @@ from datetime import date
 from urllib.parse import urlparse
 
 import httpx
-from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.agents import perplexity
 from app.config import get_settings
-from app.core.entities import Customer, Product, StockPosition, Supplier
 
 MAX_STEPS = 9
 PAGE_CHARS = 12000
@@ -99,35 +97,12 @@ def read_page(url: str) -> tuple[str, str | None]:
 
 
 def analyste_digest(session: Session, company_id, terms: list[str]) -> str:
-    """What the company's data says, computed (the Analyste uses no language model)."""
+    """The Analyste's analysis, focused on the given terms (computed, no language model)."""
 
-    products = session.query(func.count(Product.id)).filter_by(company_id=company_id).scalar() or 0
-    suppliers = session.query(func.count(Supplier.id)).filter_by(company_id=company_id).scalar() or 0
-    customers = session.query(func.count(Customer.id)).filter_by(company_id=company_id).scalar() or 0
-    lines = [f"Données du logiciel : {products} produits, {suppliers} fournisseurs, {customers} clients/prospects."]
-    top = (
-        session.query(Product.name, Product.sku, Product.brand, func.sum(StockPosition.quantity))
-        .join(StockPosition, StockPosition.product_id == Product.id).filter(Product.company_id == company_id)
-        .group_by(Product.id).order_by(func.sum(StockPosition.quantity).desc()).limit(8).all()
-    )
-    if top:
-        lines.append("Plus gros stocks : " + "; ".join(f"{n} ({s or 'sans réf.'}, {b or '?'}) : {int(q or 0)}" for n, s, b, q in top))
-    brands = session.query(Product.brand, func.count(Product.id)).filter(Product.company_id == company_id, Product.brand.isnot(None)).group_by(Product.brand).order_by(func.count(Product.id).desc()).limit(8).all()
-    if brands:
-        lines.append("Marques les plus présentes : " + ", ".join(f"{b} ({c})" for b, c in brands))
-    for term in [t.strip() for t in terms if t and t.strip()][:5]:
-        like = f"%{term}%"
-        found = session.query(Product).filter(Product.company_id == company_id, or_(Product.name.ilike(like), Product.sku.ilike(like), Product.brand.ilike(like), Product.category.ilike(like))).limit(6).all()
-        sup = session.query(Supplier.name, Supplier.country).filter(Supplier.company_id == company_id, Supplier.name.ilike(like)).limit(4).all()
-        cus = session.query(Customer.name, Customer.status).filter(Customer.company_id == company_id, Customer.name.ilike(like)).limit(4).all()
-        lines.append(f"« {term} » : " + ("; ".join(f"produit {p.name} ({p.sku or '—'}, coût {p.unit_cost if p.unit_cost is not None else '?'}, prix de vente {p.sale_price if p.sale_price is not None else '?'})" for p in found) or "aucun produit")
-                     + (" | fournisseurs : " + ", ".join(f"{n} ({c or '?'})" for n, c in sup) if sup else "") + (" | clients : " + ", ".join(f"{n} ({s})" for n, s in cus) if cus else ""))
-    from app.agents import service
+    from app.agents import dossier, service
 
     last = service.last_analysis(session, company_id)
-    if last:
-        lines.append(f"Dernière analyse de l'Analyste : {last['summary']}")
-    return "\n".join(lines)
+    return (f"Dernière analyse : {last['summary']}\n\n" if last else "") + dossier.build(session, company_id, " ".join(terms), budget=9000)
 
 
 # --- the loop -------------------------------------------------------------------

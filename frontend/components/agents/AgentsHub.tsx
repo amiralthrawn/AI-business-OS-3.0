@@ -293,9 +293,10 @@ function DirectRequest({ agent, onDone }: { agent: Agent; onDone: () => Promise<
     }
   }
 
-  async function veilleurAsk(request: string, followTopic: boolean, context?: string): Promise<Panel> {
-    const r = await agentsCall<{ message: string; found: Found[]; used?: Used[] }>("/veilleur/ask", "POST", { request, follow: followTopic, context });
-    return { who: "Veilleur", asked: request, text: r.message, found: r.found, sources: [], used: r.used ?? [] };
+  async function veilleurAsk(request: string, followTopic: boolean, withAnalysis = false): Promise<Panel> {
+    const r = await agentsCall<{ message: string; found: Found[]; used?: Used[]; shared_chars?: number }>("/veilleur/ask", "POST", { request, follow: followTopic, with_analysis: withAnalysis });
+    const shared = r.shared_chars ? `(Analyse transmise : ${fmtNum(r.shared_chars)} caractères de votre analyse complète : risques, opportunités, ventes, achats, produits, stocks.)\n\n` : "";
+    return { who: "Veilleur", asked: request, text: shared + r.message, found: r.found, sources: [], used: r.used ?? [] };
   }
 
   if (agent.key === "analyste") {
@@ -322,7 +323,8 @@ function DirectRequest({ agent, onDone }: { agent: Agent; onDone: () => Promise<
           <ResponseSheet panel={panel} onClose={() => setPanel(null)}>
             {panel.analysis && (
               <div className="rounded-xl bg-surface-sunken p-3.5">
-                <p className="text-[12.5px] font-semibold text-text">Transmettre cette analyse au Veilleur</p>
+                <p className="text-[12.5px] font-semibold text-text">Transmettre l&rsquo;analyse complète au Veilleur</p>
+                <p className="mt-0.5 text-[12px] text-text-soft">Il reçoit l&rsquo;analyse détaillée (risques, opportunités, ventes, achats, produits, stocks), en priorité ce qui touche à votre consigne.</p>
                 <textarea value={relay} onChange={(e) => setRelay(e.target.value)} rows={2} className="mt-2 w-full rounded-lg border-[1.5px] border-border-strong bg-surface px-3 py-2 text-[13px]" />
                 <Button
                   className="mt-2"
@@ -332,7 +334,7 @@ function DirectRequest({ agent, onDone }: { agent: Agent; onDone: () => Promise<
                     setRelaying(true);
                     setError(null);
                     try {
-                      setPanel(await veilleurAsk(relay.trim(), false, panel.analysis));
+                      setPanel(await veilleurAsk(relay.trim(), false, true));
                       await onDone();
                     } catch (e) {
                       setError(e instanceof Error ? e.message : "Échec");
@@ -341,7 +343,7 @@ function DirectRequest({ agent, onDone }: { agent: Agent; onDone: () => Promise<
                     }
                   }}
                 >
-                  Transmettre au Veilleur
+                  Transmettre l&rsquo;analyse au Veilleur
                 </Button>
                 {relaying && <p className="mt-2 text-[12.5px] text-text-faint">Le Veilleur travaille sur l&rsquo;analyse, cela peut prendre une minute…</p>}
                 {error && <p className="mt-2 text-[12.5px] text-danger">{error}</p>}

@@ -321,12 +321,21 @@ def usage_summary(session: Session, company_id: uuid.UUID) -> dict:
     }
 
 
-def ask_veilleur(session: Session, company: Company, request: str, follow: bool, context: str | None = None) -> dict:
+def ask_veilleur(session: Session, company: Company, request: str, follow: bool, context: str | None = None, with_analysis: bool = False) -> dict:
     """A direct request to the Veilleur: search this subject now, return what
     was found, and (optionally) keep following it."""
 
     if veilleur_agent.enabled():
-        return _ask_veilleur_agent(session, company, request, follow, context)
+        shared = 0
+        if with_analysis:
+            from app.agents import dossier
+
+            last = last_analysis(session, company.id)
+            context = (f"Résumé de la dernière analyse : {last['summary']}\n\n" if last else "") + dossier.build(session, company.id, request)
+            shared = len(context)
+        out = _ask_veilleur_agent(session, company, request, follow, context)
+        out["shared_chars"] = shared
+        return out
     if not perplexity.configured():
         log_run(session, company.id, "veilleur", "not_configured", f"Demande : {request[:120]} : aucune clé de recherche.")
         return {"status": "not_configured", "found": [], "message": "Aucune clé de recherche web n'est renseignée : le Veilleur ne peut pas chercher."}
