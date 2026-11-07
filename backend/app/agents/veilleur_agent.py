@@ -82,12 +82,24 @@ def read_page(url: str) -> tuple[str, str | None]:
         return "Adresse invalide : il faut une URL complète commençant par http(s)://", None
     if not _public_host(parsed.hostname):
         return "Cette adresse n'est pas une page publique : lecture refusée.", None
-    try:
-        res = httpx.get(url.strip(), timeout=20, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (compatible; VeilleurBot/1.0)", "Accept-Language": "fr,en;q=0.8"})
-    except httpx.HTTPError as exc:
-        return f"Page injoignable : {str(exc)[:200]}", None
+    headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36", "Accept": "text/html,application/xhtml+xml", "Accept-Language": "fr,en;q=0.8"}
+    # a link copied from an ad carries tracking parameters that often trigger a block: retry on the bare page
+    candidates = [url.strip()] + ([parsed._replace(query="", fragment="").geturl()] if parsed.query else [])
+    res = None
+    last = "Page injoignable."
+    for candidate in candidates:
+        try:
+            res = httpx.get(candidate, timeout=20, follow_redirects=True, headers=headers)
+        except httpx.HTTPError as exc:
+            last = f"Page injoignable : {str(exc)[:200]}"
+            res = None
+            continue
+        if res.status_code == 200:
+            break
+    if res is None:
+        return last, None
     if res.status_code != 200:
-        return f"La page a répondu {res.status_code} (accès refusé ou inexistante).", None
+        return f"La page a répondu {res.status_code} (accès refusé ou inexistante), même sans les paramètres de suivi.", None
     if "html" not in res.headers.get("content-type", "") and "text" not in res.headers.get("content-type", ""):
         return "Ce n'est pas une page de texte lisible.", None
     text = _text_of(res.text[:1_500_000])
