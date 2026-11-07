@@ -104,6 +104,31 @@ AGENT_LABELS = {
 }
 
 
+def routes(agent: str) -> list[dict]:
+    """Which model handles which kind of request. Each step of an agent is sent
+    to the model that fits it (reasoning, web search, plain calculation)."""
+
+    from app.config import get_settings as app_settings
+
+    settings = app_settings()
+    if not (settings.openrouter_api_key or "").strip():
+        return []
+    if agent == "veilleur":
+        return [
+            {"task": "Comprendre votre demande, raisonner, rédiger la réponse, choisir les outils", "model": settings.openrouter_agent_model},
+            {"task": "Chercher sur le web avec sources (prix, salons, concurrents, actualités)", "model": settings.openrouter_model},
+            {"task": "Lire une page web que vous indiquez (OEMsTrade, Accuris…)", "model": None},
+            {"task": "Comparer avec vos produits, stocks, fournisseurs, clients (Analyste)", "model": None},
+        ]
+    if agent == "guide":
+        return [
+            {"task": "Rechercher la procédure d'export d'un logiciel, avec sources", "model": settings.openrouter_model},
+            {"task": "Répondre à une question sur un logiciel, avec sources", "model": settings.openrouter_model},
+            {"task": "Suggérer l'étape suivante après un import", "model": None},
+        ]
+    return [{"task": "Détecter les risques et opportunités dans vos chiffres", "model": None}]
+
+
 def model_in_use(agent: str) -> dict:
     """What really powers an agent today. The two web agents (Veilleur, Guide)
     share the search provider; the Analyste is plain calculation on the
@@ -112,6 +137,11 @@ def model_in_use(agent: str) -> dict:
     from app.config import get_settings as app_settings
 
     settings = app_settings()
+    out = _model_in_use(agent, settings)
+    return {**out, "routes": routes(agent)}
+
+
+def _model_in_use(agent: str, settings) -> dict:
     if agent == "analyste":
         return {"provider": "Calculs internes", "model": None, "kind": "rules", "note": "Aucun modèle de langage : règles et statistiques sur vos chiffres."}
     if (settings.openrouter_api_key or "").strip():

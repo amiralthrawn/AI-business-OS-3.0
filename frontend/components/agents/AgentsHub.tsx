@@ -67,6 +67,19 @@ function AgentCard({ agent, requests, usage, catalog, onChanged }: { agent: Agen
           {agent.model.model ? ` · ${agent.model.model}` : ""}
         </p>
         <p className="mt-0.5 text-text-soft">{agent.model.note}</p>
+        {(agent.model.routes?.length ?? 0) > 0 && (
+          <div className="mt-3">
+            <p className="text-[11.5px] font-bold uppercase tracking-wide text-text-faint">Quel modèle pour quelle demande</p>
+            <ul className="mt-1.5 space-y-1.5">
+              {agent.model.routes!.map((r) => (
+                <li key={r.task} className="rounded-lg bg-surface px-3 py-2 text-[12.5px] text-text-soft">
+                  {r.task}
+                  <span className="block font-semibold text-text">→ {r.model ?? "Sans modèle IA : lecture ou calcul direct (0 token)"}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {usage && usage.calls > 0 && (
           <p className="mt-2 text-[12.5px] text-text-soft">
             Consommation : <span className="font-semibold text-text">{fmtNum(usage.tokens_in + usage.tokens_out)} tokens</span> · {usage.calls} appel{usage.calls > 1 ? "s" : ""} · <span className="font-semibold text-text">{fmtUsd(usage.usd)}</span>

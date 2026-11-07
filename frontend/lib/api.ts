@@ -636,7 +636,7 @@ export type AgentsOverview = {
   proposals: AgentProposal[];
   agents: {
     key: string; label: string; description: string; configured: boolean; last_status: string | null; last_message: string | null; last_run_at: string | null;
-    model: { provider: string | null; model: string | null; kind: string; note: string };
+    model: { provider: string | null; model: string | null; kind: string; note: string; routes?: { task: string; model: string | null }[] };
     recent_runs?: { status: string; found: number; message: string | null; at: string }[];
   }[];
   usage?: AgentsUsage | null;
