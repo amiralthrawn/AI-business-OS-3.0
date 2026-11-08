@@ -41,6 +41,7 @@ from app.sourcing.router import router as sourcing_router
 from app.treasury.router import ownership_router, treasury_router
 from app.website.router import router as website_router
 from app.browser.router import router as browser_router
+from app.connectors.oauth_router import public_router as oauth_public_router, router as oauth_router
 from app.billing.router import router as billing_router
 
 _settings = get_settings()
@@ -144,6 +145,8 @@ app.include_router(compliance_router, dependencies=SIGNED_IN)
 app.include_router(sourcing_router, dependencies=SIGNED_IN)
 app.include_router(website_router, dependencies=SIGNED_IN)
 app.include_router(browser_router, dependencies=SIGNED_IN)
+app.include_router(oauth_router, dependencies=SIGNED_IN)
+app.include_router(oauth_public_router)
 app.include_router(billing_router, dependencies=SIGNED_IN)
 
 

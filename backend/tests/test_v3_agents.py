@@ -490,3 +490,34 @@ def test_ai_browser_acts_hands_over_to_the_person_and_finishes(client, monkeypat
     assert finished["status"] == "done" and "validé" in finished["summary"]
     assert "motdepasse-secret" not in str(finished)  # what the person types is never logged
     server.shutdown()
+
+
+def test_gmail_oauth_connection_is_read_only_encrypted_and_ingests_mail(client, monkeypatch):
+    from datetime import datetime, timezone
+    from urllib.parse import parse_qs, urlparse
+
+    from app.connectors import oauth
+    from app.connectors.models import ExternalEmail
+
+    headers = _director(client, "Oauth Co", "oauth@co.example")
+    s = get_settings()
+    assert client.get("/oauth/google/start", headers=headers).status_code == 400  # not enabled without credentials
+    monkeypatch.setattr(s, "google_oauth_client_id", "cid")
+    monkeypatch.setattr(s, "google_oauth_client_secret", "sec")
+    url = client.get("/oauth/google/start", headers=headers).json()["url"]
+    q = parse_qs(urlparse(url).query)
+    assert "gmail.readonly" in q["scope"][0] and "send" not in q["scope"][0] and q["client_id"] == ["cid"]
+    monkeypatch.setattr(oauth, "_token_call", lambda provider, data: {"refresh_token": "REFRESH-SECRET", "access_token": "acc"})
+    class Fake:  # userinfo answer
+        def json(self): return {"email": "boss@fe-components.fr"}
+    monkeypatch.setattr(oauth.httpx, "get", lambda *a, **k: Fake())
+    msg = ExternalEmail(external_id="g1", thread_id="t1", sender="client@acme.example", recipients=["boss@fe-components.fr"], subject="Demande de prix", body="Bonjour, prix du STM32 ?", timestamp=datetime.now(timezone.utc))
+    monkeypatch.setattr(oauth, "fetch", lambda session, company_id, provider: [msg])
+    res = client.get("/oauth/google/callback", params={"code": "abc", "state": q["state"][0]}, follow_redirects=False)
+    assert res.status_code == 302 and "connected=gmail" in res.headers["location"]
+    st = next(p for p in client.get("/oauth/status", headers=headers).json() if p["provider"] == "google")
+    assert st["connected"] is True and st["account"] == "boss@fe-components.fr" and st["last_sync"]
+    assert "REFRESH-SECRET" not in str(client.get("/configuration", headers=headers).json())
+    assert "/?service=mail" not in [x["href"] for x in client.get("/agents/overview", headers=headers).json()["guide"]["steps"]]
+    assert client.get("/oauth/google/callback", params={"code": "abc", "state": "forged"}, follow_redirects=False).headers["location"].find("oauth_error") > 0
+    assert client.delete("/oauth/google", headers=headers).status_code == 204

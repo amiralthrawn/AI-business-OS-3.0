@@ -104,8 +104,7 @@ def _already_ingested(session: Session, model, source: str, external_id: str) ->
     return session.query(model).filter_by(source=source, external_id=external_id).first() is not None
 
 
-def ingest_email(session: Session, provider: EmailProvider, company_id: uuid.UUID) -> SyncResult:
-    source = "mock_email"
+def ingest_email(session: Session, provider: EmailProvider, company_id: uuid.UUID, source: str = "mock_email") -> SyncResult:
     messages = provider.list_messages()
     created = 0
     skipped = 0

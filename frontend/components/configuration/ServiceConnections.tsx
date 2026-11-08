@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import ToolSyncPage from "@/components/configuration/ToolSyncPage";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
-import { type ManagedService, connectManagedService, getManagedServices } from "@/lib/api";
+import { type ManagedService, type OAuthProvider, connectManagedService, getManagedServices, getOAuthStatus, startOAuth } from "@/lib/api";
 
 // The two connections the product keeps asking for until they exist: the
 // company mailbox and the control of its website. The Guide agent researches
@@ -13,6 +13,7 @@ import { type ManagedService, connectManagedService, getManagedServices } from "
 export default function ServiceConnections() {
   const router = useRouter();
   const [services, setServices] = useState<ManagedService[]>([]);
+  const [oauth, setOauth] = useState<OAuthProvider[]>([]);
   const [choice, setChoice] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -21,6 +22,7 @@ export default function ServiceConnections() {
   async function load() {
     try {
       setServices(await getManagedServices());
+      setOauth(await getOAuthStatus());
     } catch {
       setServices([]);
     }
@@ -45,6 +47,33 @@ export default function ServiceConnections() {
               <h2 className="text-[16px] font-semibold text-text">{s.label}</h2>
             </div>
             <p className="text-[13.5px] text-text-soft">{s.why}</p>
+            {s.service === "mail" && oauth.some((p) => p.enabled) && (
+              <div className="rounded-xl border border-accent/40 bg-accent-soft p-3.5">
+                <p className="text-[13px] font-semibold text-text">Connexion directe, en lecture seule</p>
+                <p className="mt-0.5 text-[12.5px] text-text-soft">Vous vous identifiez sur la page de Google ou de Microsoft et vous autorisez la lecture. Le logiciel ne peut rien envoyer ni supprimer, et vous pouvez retirer l&rsquo;accès à tout moment.</p>
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  {oauth.filter((p) => p.enabled).map((p) => (
+                    <Button
+                      key={p.provider}
+                      loading={busy === p.provider}
+                      disabled={busy !== null}
+                      onClick={async () => {
+                        setBusy(p.provider);
+                        setError(null);
+                        try {
+                          window.location.assign((await startOAuth(p.provider)).url);
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "Échec");
+                          setBusy(null);
+                        }
+                      }}
+                    >
+                      Autoriser {p.provider === "google" ? "Gmail" : "Outlook"}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
             {open === s.service ? (
               <div className="rounded-xl border border-border p-3 sm:p-4">
                 <ToolSyncPage key={picked} toolKey={picked} label={label} />

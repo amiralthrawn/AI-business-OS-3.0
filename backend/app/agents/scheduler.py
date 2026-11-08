@@ -15,6 +15,26 @@ log = logging.getLogger("agents")
 TICK_SECONDS = 300
 
 
+def _sync_mailboxes(db, company) -> None:
+    """Connected mailboxes are re-read about every hour."""
+
+    from datetime import datetime, timedelta, timezone
+
+    from app.connectors import oauth
+    from app.connectors.oauth_router import sync
+
+    for entry in oauth.status(db, company.id):
+        if not entry["connected"]:
+            continue
+        last = entry["last_sync"]
+        if last and datetime.now(timezone.utc) - datetime.fromisoformat(last) < timedelta(hours=1):
+            continue
+        try:
+            sync(db, company, entry["provider"])
+        except oauth.OAuthError:
+            db.rollback()
+
+
 def run_cycle() -> None:
     with SessionLocal() as listing:
         companies = [(c.id) for c in listing.query(Company).all()]
@@ -25,6 +45,7 @@ def run_cycle() -> None:
             if company is None or not service.get_settings(db, company.id)["enabled"]:
                 continue
             try:
+                _sync_mailboxes(db, company)
                 hours = service.cadence_hours()
                 if service.is_due(db, company.id, "analyste", 1):
                     service.run_analyste(db, company)

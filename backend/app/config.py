@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     # web and returns its sources. Used first when set.
     openrouter_api_key: str | None = None
     openrouter_model: str = "perplexity/sonar"
+    google_oauth_client_id: str | None = None  # Gmail connection (read-only)
+    google_oauth_client_secret: str | None = None
+    microsoft_oauth_client_id: str | None = None  # Outlook / Microsoft 365 connection (read-only)
+    microsoft_oauth_client_secret: str | None = None
+    microsoft_oauth_tenant: str = "common"
+    api_public_url: str | None = None  # this API's public address, used as the OAuth redirect base
     browserbase_api_key: str | None = None  # cloud browser for the AI browser agent
     browserbase_project_id: str | None = None
     browser_local: bool = False  # dev only: drive a local Chromium instead of the cloud

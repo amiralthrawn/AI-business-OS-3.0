@@ -713,3 +713,17 @@ export async function browserScreen(id: string): Promise<string | null> {
   const res = await apiFetch(`${API_URL}/browser/tasks/${id}/screen`, { cache: "no-store" });
   return res.ok ? URL.createObjectURL(await res.blob()) : null;
 }
+
+export type OAuthProvider = { provider: "google" | "microsoft"; label: string; tool: string; enabled: boolean; connected: boolean; account: string | null; connected_at: string | null; last_sync: string | null };
+async function oauthCall<T>(path: string, method = "GET"): Promise<T> {
+  const res = await apiFetch(`${API_URL}/oauth${path}`, { method, cache: "no-store" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(errorText(err?.detail, `Échec (${res.status})`));
+  }
+  return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+}
+export const getOAuthStatus = () => oauthCall<OAuthProvider[]>("/status").catch(() => [] as OAuthProvider[]);
+export const startOAuth = (provider: string) => oauthCall<{ url: string }>(`/${provider}/start`);
+export const syncOAuth = (provider: string) => oauthCall<{ fetched: number; created: number }>(`/${provider}/sync`, "POST");
+export const disconnectOAuth = (provider: string) => oauthCall<void>(`/${provider}`, "DELETE");

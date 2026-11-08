@@ -22,7 +22,8 @@ export const dynamic = "force-dynamic";
 //  1. this page -- a feed of decisions sorted by euros at stake, one click each;
 //  2. "Pourquoi ?" inside every card -- reasoning, sources, links to the records;
 //  3. "Données" (menu) -- every detailed table behind a single entry and a search.
-export default async function CommandCenterPage() {
+export default async function CommandCenterPage({ searchParams }: { searchParams: Promise<{ connected?: string; oauth_error?: string }> }) {
+  const sp = await searchParams;
   let home: HomeResponse | null = null;
   let error: string | null = null;
   try {
@@ -46,6 +47,8 @@ export default async function CommandCenterPage() {
   return (
     <main className="mx-auto max-w-3xl space-y-7 p-4 sm:space-y-10 sm:p-6 md:p-10">
       <OnboardingGate needsSetup={needsSetup} />
+      {sp.connected && <p className="rounded-xl bg-success-soft p-3.5 text-[13.5px] font-semibold text-success">Messagerie connectée ({sp.connected}) : vos e-mails récents sont en cours d&rsquo;analyse. L&rsquo;accès est en lecture seule et révocable à tout moment.</p>}
+      {sp.oauth_error && <p className="rounded-xl bg-danger/10 p-3.5 text-[13.5px] text-danger">Connexion impossible : {sp.oauth_error}</p>}
 
       <PageHeader title={`Bonjour${me?.profile?.name ? ` ${me.profile.name.split(" ")[0]}` : ""}.`} description="Voici ce qui demande votre décision aujourd'hui." />
 
