@@ -4,6 +4,7 @@ import BriefingCard from "@/components/home/BriefingCard";
 import AgentFeed from "@/components/home/AgentFeed";
 import SiteIntegration from "@/components/communications/SiteIntegration";
 import ServiceConnections from "@/components/configuration/ServiceConnections";
+import ActivityPanel from "@/components/home/ActivityPanel";
 import BrowserNotice from "@/components/home/BrowserNotice";
 import GuideCard from "@/components/home/GuideCard";
 import DecisionFeed from "@/components/home/DecisionFeed";
@@ -79,11 +80,13 @@ export default async function CommandCenterPage({ searchParams }: { searchParams
           </section>
 
           {agents && agents.agents.length > 0 && <BrowserNotice />}
-          {agents?.guide?.steps.some((st) => st.href === "/communications?tab=website") && <SiteIntegration websiteUrl={null} compact />}
+          {agents?.guide?.steps.some((st) => st.href === "/communications?tab=website") && <SiteIntegration websiteUrl={company?.website_url ?? null} compact />}
           {agents?.guide?.steps.some((st) => st.href.startsWith("/?service=")) && <ServiceConnections />}
           {agents?.guide && <GuideCard guide={agents.guide} />}
 
           {home.briefing && <BriefingCard briefing={home.briefing} viewer={home.viewer} />}
+
+          {agents && agents.agents.length > 0 && <ActivityPanel />}
 
           {agents && <AgentFeed proposals={agents.proposals} />}
 

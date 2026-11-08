@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.agents import executant, perplexity, veilleur, veilleur_agent
+from app.agents import executant, followup, perplexity, veilleur, veilleur_agent
 from app.business_context.service import BusinessContextService
 from app.configuration import service as config_service
 from app.core.entities import (
@@ -543,6 +543,7 @@ def run_analyste(session: Session, company: Company) -> AgentRun:
     _refresh_site(session, company)
     try:
         suggest_browser_tasks(session, company)
+        followup.ask_questions(session, company)
     except Exception:
         session.rollback()
     return run
@@ -570,7 +571,7 @@ def suggest_browser_tasks(session: Session, company: Company) -> int:
         kinds = ", ".join(config_guide.KIND_LABEL[k] for k in category.import_kinds)
         goal = f"Exporte depuis {label} les données utiles ({kinds}) au format CSV ou Excel, puis rends-moi la main avec le fichier."
         item = {"category": "navigateur", "title": f"Laisser l'IA exporter vos données depuis {label}", "summary": f"L'IA ouvre {label} dans un navigateur que vous suivez, vous passe la main pour vous connecter, exporte {kinds} et verse le fichier dans le logiciel.",
-                "why_it_matters": f"Vos {kinds} de {label} ne sont pas encore dans le logiciel : sans eux, marges, stocks et alertes restent partiels.", "suggested_action": {"type": "browser", "text": goal}}
+                "why_it_matters": f"Vos {kinds} de {label} ne sont pas encore dans le logiciel : sans eux, marges, stocks et alertes restent partiels.", "suggested_action": {"type": "browser", "text": goal, "tool": label}}
         created += _ingest(session, company, item, [], agent="guide")
     session.commit()
     return created
@@ -608,7 +609,7 @@ def _ingest(session: Session, company: Company, item: dict, sources: list[str], 
         company_id=company.id, agent=agent, kind="finding", category=category, title=title,
         summary=str(item.get("summary") or "")[:1500] or None, why=str(item.get("why_it_matters") or "")[:1500] or None,
         sources=sources[:6], event_date=when, action_type=action,
-        action_payload=({"text": str(suggestion.get("text") or title)[:500], **({"url": str(suggestion["url"])[:500]} if suggestion.get("url") else {})}) if action != "none" else None,
+        action_payload=({"text": str(suggestion.get("text") or title)[:500], **({"url": str(suggestion["url"])[:500]} if suggestion.get("url") else {}), **({"tool": str(suggestion["tool"])[:80]} if suggestion.get("tool") else {})}) if action != "none" else None,
         status="new", dedupe_key=key,
     )
     session.add(proposal)
@@ -654,7 +655,10 @@ def execute(session: Session, proposal: AgentProposal, *, automatic: bool) -> No
 
         if not manager.available():
             raise RuntimeError("Le navigateur de l'IA n'est pas activé sur ce serveur.")
-        started = manager.start(proposal.company_id, str(payload.get("text") or proposal.title), payload.get("url"))
+        url = payload.get("url")
+        if not url:
+            url = followup.known_url(session, proposal.company_id, str(payload.get("tool") or "")) if payload.get("tool") else None
+        started = manager.start(proposal.company_id, str(payload.get("text") or proposal.title), url)
         ref["browser_task"] = started.id
     elif proposal.action_type == "task":
         from app.actions.service import ActionsService
@@ -781,5 +785,7 @@ def guide(session: Session, company: Company) -> dict:
     ]
     total = sum(w for w, *_ in checks)
     done = sum(w for w, ok, *_ in checks if ok)
-    steps = [{"title": t, "why": why, "href": href, "weight": w} for w, ok, t, why, href in checks if not ok]
+    kinds = {"Déposer votre liste de clients": "customers", "Déposer votre liste de fournisseurs": "suppliers", "Déposer votre catalogue de produits": "products",
+             "Déposer vos ventes et vos achats (ou votre FEC)": "sales", "Déposer votre comptabilité (FEC)": "fec"}
+    steps = [{"title": t, "why": why, "href": href, "weight": w, "import_kind": kinds.get(t)} for w, ok, t, why, href in checks if not ok]
     return {"percent": round(100 * done / total), "steps": steps}

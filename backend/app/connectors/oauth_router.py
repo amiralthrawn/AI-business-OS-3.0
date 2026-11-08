@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.access import policy as access
 from app.access.deps import CurrentUser, require
 from app.config import get_settings
+from app.agents import followup
 from app.connectors import oauth
 from app.connectors.email.base import EmailProvider
 from app.connectors.ingestion import ingest_email
@@ -41,11 +42,13 @@ def status(db: Session = Depends(get_db), company: Company = Depends(current_com
 
 
 @router.get("/{provider}/start")
-def start(provider: str, request: Request, company: Company = Depends(current_company), _u: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+def start(provider: str, request: Request, db: Session = Depends(get_db), company: Company = Depends(current_company), _u: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
     if provider not in oauth.PROVIDERS:
         raise HTTPException(status_code=404, detail="unknown provider")
     try:
-        return {"url": oauth.start_url(provider, company.id, str(request.base_url))}
+        url = oauth.start_url(provider, company.id, str(request.base_url))
+        followup.track(db, company.id, f"oauth:{provider}", f"Connexion de la messagerie ({oauth.PROVIDERS[provider]['tool']})", "in_progress", kind="connection", agent="guide", href="/?service=mail")
+        return {"url": url}
     except oauth.OAuthError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -83,6 +86,7 @@ def callback(provider: str, request: Request, code: str | None = None, state: st
         scope_session(db, company_id)
         company = db.query(Company).first()
         oauth.finish(db, company_id, provider, code, str(request.base_url))
+        followup.track(db, company_id, f"oauth:{provider}", f"Connexion de la messagerie ({oauth.PROVIDERS[provider]['tool']})", "done", kind="connection", agent="guide")
         try:
             sync(db, company, provider)
         except oauth.OAuthError:

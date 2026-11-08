@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.access import policy as access
 from app.access.deps import CurrentUser, get_current_user, require
-from app.agents import perplexity, service, veilleur_agent
+from app.agents import followup, perplexity, service, veilleur_agent
 from app.browser import manager as browser_manager
 from app.core.entities import AgentProposal, Company
 from app.core.i18n import tx
@@ -222,4 +222,26 @@ def answer(proposal_id: uuid.UUID, payload: AnswerIn, db: Session = Depends(get_
         raise HTTPException(status_code=409, detail=tx("Cette proposition n'attend pas de réponse.", "This proposal expects no answer."))
     service.answer(db, proposal, payload.text)
     db.commit()
-    return _read(proposal)
+    deduced = followup.deduce(db, _company(db), proposal, payload.text)
+    db.commit()
+    return {**_read(proposal), "deduced": deduced}
+
+
+class DismissIn(BaseModel):
+    key: str = Field(min_length=2, max_length=120)
+
+
+@router.get("/activity")
+def get_activity(db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    return followup.activity(db, _company(db).id)
+
+
+@router.post("/activity/dismiss")
+def dismiss_activity(payload: DismissIn, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    followup.dismiss(db, _company(db).id, payload.key)
+    return followup.activity(db, _company(db).id)
+
+
+@router.post("/questions/refresh")
+def refresh_questions(db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    return {"created": followup.ask_questions(db, _company(db))}

@@ -543,3 +543,42 @@ def test_decisions_recommend_the_browser_and_it_can_run_alone(client, monkeypatc
     client.put("/configuration", headers=headers, json={"sector_key": "electronics_trading", "tools": ["pennylane", "sage_compta"]})
     client.post("/agents/analyste/run", headers=headers)
     assert len(started) == 2 and any(p["status"] == "auto_done" and p["action_type"] == "browser" for p in client.get("/agents/overview", headers=headers).json()["proposals"])
+
+
+def test_an_unfinished_connection_comes_back_until_it_is_dismissed(client, db_session):
+    from app.agents import followup
+    from app.core.entities import Company
+
+    headers = _director(client)
+    company = db_session.query(Company).first()
+    followup.track(db_session, company.id, "oauth:google", "Connexion de la messagerie", "in_progress", kind="connection")
+    assert client.get("/agents/activity", headers=headers).json()["unfinished"] == []  # just started: not late yet
+    followup.track(db_session, company.id, "tool:qonto", "Récupérer les données de Qonto", "stopped")
+    data = client.get("/agents/activity", headers=headers).json()
+    assert [i["key"] for i in data["unfinished"]] == ["tool:qonto"]
+    assert {i["status"] for i in data["items"]} == {"in_progress", "stopped"}
+    data = client.post("/agents/activity/dismiss", headers=headers, json={"key": "tool:qonto"}).json()
+    assert data["unfinished"] == [] and [i["key"] for i in data["items"]] == ["oauth:google"]
+    followup.track(db_session, company.id, "oauth:google", "Connexion de la messagerie", "done")
+    assert client.get("/agents/activity", headers=headers).json()["items"][0]["status"] == "done"
+
+
+def test_the_guide_asks_questions_and_deduces_tasks_from_the_answer(client, monkeypatch):
+    from app.agents import veilleur_agent
+
+    headers = _director(client)
+    assert client.post("/agents/questions/refresh", headers=headers).json()["created"] >= 1
+    questions = [p for p in client.get("/agents/overview", headers=headers).json()["proposals"] if p["kind"] == "missing_info"]
+    assert questions and client.post("/agents/questions/refresh", headers=headers).json()["created"] == 0  # never asked twice
+    monkeypatch.setattr(veilleur_agent, "enabled", lambda: True)
+    monkeypatch.setattr(
+        perplexity, "chat",
+        lambda system, user, **kw: json.dumps({"tasks": [{"title": "Rassembler le FEC", "summary": "Demander le FEC au comptable", "action": "task", "text": "Demander le FEC"}], "follow_up": "Qui est votre comptable ?", "learned": "Le comptable détient le FEC"}),
+    )
+    res = client.post(f"/agents/proposals/{questions[0]['id']}/answer", headers=headers, json={"text": "Mon comptable a tout"}).json()
+    assert res["deduced"]["tasks"] == 1 and res["deduced"]["follow_up"] == "Qui est votre comptable ?"
+    overview = client.get("/agents/overview", headers=headers).json()
+    assert any(p["title"] == "Rassembler le FEC" for p in overview["proposals"])
+    assert any(p["title"] == "Qui est votre comptable ?" for p in overview["proposals"])
+    guide = overview["guide"]
+    assert any(s["import_kind"] == "fec" for s in guide["steps"]) or any(s["import_kind"] for s in guide["steps"])

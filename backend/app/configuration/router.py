@@ -197,6 +197,27 @@ async def import_file(
     return await _run_import(db, company, kind, file.filename or "", content, tool, event_bus)
 
 
+def _sweep_in_background(bind, company_id, event_bus: EventBus) -> None:
+    import threading
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.core.tenant_scope import scope_session
+
+    def work() -> None:
+        session = sessionmaker(bind=bind, autoflush=False, expire_on_commit=False)()
+        try:
+            scope_session(session, company_id)
+            run_monitoring_sweep(session, event_bus)
+            session.commit()
+        except Exception:
+            session.rollback()
+        finally:
+            session.close()
+
+    threading.Thread(target=work, daemon=True).start()
+
+
 async def _run_import(db: Session, company: Company, kind: str, filename: str, content: bytes, tool: str | None, event_bus: EventBus) -> dict:
     sha = hashlib.sha256(content).hexdigest()
     for earlier in service.get_configuration(db, company.id).get("imports") or []:
@@ -233,11 +254,17 @@ async def _run_import(db: Session, company: Company, kind: str, filename: str, c
     service.record_import(db, company.id, tool, entry)
     detection = None
     if kind in ("fec", "sales", "purchases"):
-        try:
-            detection = run_monitoring_sweep(db, event_bus)
-            db.commit()
-        except Exception:  # detection must never make an import fail
-            db.rollback()
+        if db.get_bind().dialect.name == "sqlite":  # dev / tests: stay synchronous, nothing to time out
+            try:
+                detection = run_monitoring_sweep(db, event_bus)
+                db.commit()
+            except Exception:  # detection must never make an import fail
+                db.rollback()
+        else:
+            # The sweep evaluates every product, supplier and customer: on real data it outlasts the
+            # proxy timeout and the browser shows "Failed to fetch" although the import succeeded.
+            _sweep_in_background(db.get_bind(), company.id, event_bus)
+            detection = {"status": "scheduled"}
     return {
         "detection": detection,
         "kind": kind,

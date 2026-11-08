@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
@@ -19,6 +20,7 @@ function host(url: string) {
 
 // What the agents found or did, as cards of the decision feed.
 export default function AgentFeed({ proposals }: { proposals: AgentProposal[] }) {
+  const router = useRouter();
   const [state, setState] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +32,7 @@ export default function AgentFeed({ proposals }: { proposals: AgentProposal[] })
     try {
       await agentsCall(`/proposals/${p.id}/${path}`, "POST", body);
       setState((s) => ({ ...s, [p.id]: next }));
+      if (path === "answer") router.refresh(); // the agent may have deduced tasks or a follow-up question
     } catch (e) {
       setError(e instanceof Error ? e.message : "Échec");
     } finally {

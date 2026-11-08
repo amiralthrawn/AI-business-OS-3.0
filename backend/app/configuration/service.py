@@ -126,6 +126,15 @@ def record_import(session: Session, company_id: uuid.UUID, tool_key: str | None,
     context.configuration = config
     session.add(context)
     session.commit()
+    if tool_key and tools.is_known_tool(tool_key):
+        _track_tool(session, company_id, tool_key, "done")
+
+
+def _track_tool(session: Session, company_id: uuid.UUID, tool_key: str, status: str) -> None:
+    from app.agents import followup
+
+    info = tools.tool_info(tool_key)
+    followup.track(session, company_id, f"tool:{tool_key}", f"Récupérer les données de {info[0] if info else tool_key}", status, kind="connection", agent="guide", href="/settings")
 
 
 def ai_profile(config: dict) -> dict:
@@ -200,6 +209,7 @@ def request_connection(session: Session, company_id: uuid.UUID, tool_key: str) -
     context.configuration = config
     session.add(context)
     session.commit()
+    _track_tool(session, company_id, tool_key, "in_progress")
     return state
 
 

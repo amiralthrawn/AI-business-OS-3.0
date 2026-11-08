@@ -81,7 +81,17 @@ export default function OnboardingWizard({
   initialContext: BusinessContextRead | null;
 }) {
   const router = useRouter();
-  const [step, setStep] = useState(0);
+  const [step, setStepRaw] = useState(0);
+  const setStep = (v: number | ((s: number) => number)) =>
+    setStepRaw((prev) => {
+      const n = typeof v === "function" ? v(prev) : v;
+      try {
+        localStorage.setItem("aibos_onboarding_step", String(n));
+      } catch {
+        /* storage unavailable */
+      }
+      return n;
+    });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<ConfigCatalog | null>(null);
@@ -89,7 +99,7 @@ export default function OnboardingWizard({
   const [importRefresh, setImportRefresh] = useState(0);
 
   const [name, setName] = useState(initialCompany?.name ?? "");
-  const [website, setWebsite] = useState("");
+  const [website, setWebsite] = useState(initialCompany?.website_url ?? "");
   const [sectorKey, setSectorKey] = useState("");
   const [sectorCustom, setSectorCustom] = useState("");
   const [userName, setUserName] = useState("");
@@ -106,6 +116,13 @@ export default function OnboardingWizard({
   const [syncing, setSyncing] = useState<string | null>(null);
 
   useEffect(() => {
+    // A reload (or a network hiccup at the end of an import) resumes where the person was.
+    try {
+      const saved = Number(localStorage.getItem("aibos_onboarding_step"));
+      if (Number.isInteger(saved) && saved > 0 && saved < STEPS.length) setStepRaw(saved);
+    } catch {
+      /* storage unavailable */
+    }
     getConfigCatalog().then(setCatalog).catch((err) => setCatalogError(err instanceof Error ? err.message : "Catalogue indisponible."));
     getConfiguration()
       .then((c) => {
@@ -201,7 +218,7 @@ export default function OnboardingWizard({
   }
 
   function skipToProduct() {
-    localStorage.setItem("aibos_onboarding_done", "1");
+    { localStorage.setItem("aibos_onboarding_done", "1"); localStorage.removeItem("aibos_onboarding_step"); }
     router.push("/");
   }
 
@@ -215,7 +232,7 @@ export default function OnboardingWizard({
         const profile = await createUser({ name: userName.trim() || "Moi", role });
         setSelectedProfile(profile.id);
       }
-      localStorage.setItem("aibos_onboarding_done", "1");
+      { localStorage.setItem("aibos_onboarding_done", "1"); localStorage.removeItem("aibos_onboarding_step"); }
       router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Une erreur est survenue lors de l'enregistrement.");

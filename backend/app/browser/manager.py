@@ -83,6 +83,9 @@ def start(company_id: uuid.UUID, goal: str, start_url: str | None = None) -> Tas
         TASKS[task.id] = task
         for old in [k for k, v in TASKS.items() if v.status not in ACTIVE and time.time() - v.started > 3600]:
             TASKS.pop(old, None)
+    from app.agents import followup
+
+    followup.safe_track(company_id, f"browser:{task.id}", f"Navigateur : {task.goal[:120]}", "in_progress", kind="browser", agent="navigateur", href="/agents")
     threading.Thread(target=_run, args=(task, start_url), daemon=True).start()
     return task
 
@@ -269,9 +272,11 @@ def _act(page, task: Task, decision: dict) -> bool:
 def _book(task: Task) -> None:
     """Tokens and cost go on the Exécutant, the run is logged."""
 
-    from app.agents import service
+    from app.agents import followup, service
     from app.core.tenant_scope import scope_session
     from app.database import SessionLocal
+
+    followup.safe_track(task.company_id, f"browser:{task.id}", f"Navigateur : {task.goal[:120]}", "done" if task.status == "done" else "stopped", kind="browser", agent="navigateur", href="/agents")
 
     try:
         with SessionLocal() as db:

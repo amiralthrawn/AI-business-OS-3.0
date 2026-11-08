@@ -312,7 +312,9 @@ export async function importAuto(file: File, tool?: string): Promise<ImportResul
   const body = new FormData();
   body.append("file", file);
   const query = tool ? `?tool=${encodeURIComponent(tool)}` : "";
-  const res = await apiFetch(`${API_URL}/configuration/imports/auto${query}`, { method: "POST", body, cache: "no-store" });
+  const res = await apiFetch(`${API_URL}/configuration/imports/auto${query}`, { method: "POST", body, cache: "no-store" }).catch(() => {
+    throw new Error("La connexion a été interrompue pendant l'import. Le document a peut-être bien été ajouté : actualisez la liste avant de le redéposer.");
+  });
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
     throw new Error(typeof detail?.detail === "string" ? detail.detail : `Import impossible (${res.status})`);
@@ -332,7 +334,9 @@ export async function importDataFile(kind: ImportKind, file: File, tool?: string
   const body = new FormData();
   body.append("file", file);
   const query = tool ? `?tool=${encodeURIComponent(tool)}` : "";
-  const res = await apiFetch(`${API_URL}/configuration/imports/${kind}${query}`, { method: "POST", body, cache: "no-store" });
+  const res = await apiFetch(`${API_URL}/configuration/imports/${kind}${query}`, { method: "POST", body, cache: "no-store" }).catch(() => {
+    throw new Error("La connexion a été interrompue pendant l'import. Le document a peut-être bien été ajouté : actualisez la liste avant de le redéposer.");
+  });
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
     throw new Error(typeof detail?.detail === "string" ? detail.detail : `Import impossible (${res.status})`);
@@ -638,7 +642,7 @@ export type AgentsUsage = {
   catalog: { model: string; label: string; usd_per_m_in: number; usd_per_m_out: number; usd_per_request: number }[];
 };
 export type AgentsOverview = {
-  guide: { percent: number; steps: { title: string; why: string; href: string; weight: number }[] } | null;
+  guide: { percent: number; steps: { title: string; why: string; href: string; weight: number; import_kind?: string | null }[] } | null;
   proposals: AgentProposal[];
   agents: {
     key: string; label: string; description: string; configured: boolean; last_status: string | null; last_message: string | null; last_run_at: string | null;
@@ -651,6 +655,11 @@ export type AgentsOverview = {
   settings: { enabled: boolean; autonomy: Record<string, "ask" | "auto">; watch_topics?: string[] } | null;
   cadence_hours: number;
 };
+
+export type ActivityItem = { key: string; kind: string; title: string; status: "in_progress" | "stopped" | "done"; href?: string | null; agent?: string | null; started_at: string; updated_at: string };
+export type ActivityState = { items: ActivityItem[]; unfinished: ActivityItem[] };
+export const getActivity = () => agentsCall<ActivityState>("/activity", "GET");
+export const dismissActivity = (key: string) => agentsCall<ActivityState>("/activity/dismiss", "POST", { key });
 
 export const getAgentsOverview = () => getJSON<AgentsOverview>("/agents/overview", "Agents indisponibles");
 // FastAPI sends `detail` as a string, or as a list of problems on a 422.

@@ -442,12 +442,13 @@ export interface CompanyRead {
   id: string;
   name: string;
   industry: string | null;
+  website_url?: string | null;
 }
 
 export interface CompanyUpdate {
   name?: string;
   industry?: string;
-  website_url?: string;
+  website_url?: string | null;
 }
 
 export interface BusinessContextRead {
