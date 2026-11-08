@@ -1,7 +1,7 @@
 "use client";
 
 import AIProgressDock from "@/components/layout/AIProgressDock";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import MobileTabBar from "@/components/layout/MobileTabBar";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
@@ -22,6 +22,15 @@ export default function AppShell({
   users: UserProfileRead[];
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const scroller = useRef<HTMLDivElement>(null);
+  const [showTop, setShowTop] = useState(false);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const on = () => setShowTop(el.scrollTop > 700);
+    el.addEventListener("scroll", on, { passive: true });
+    return () => el.removeEventListener("scroll", on);
+  }, []);
 
   return (
     <LocaleProvider>
@@ -42,7 +51,16 @@ export default function AppShell({
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar companyName={companyName} pendingCount={pendingCount} me={me} users={users} onMenuClick={() => setMobileOpen(true)} />
-          <div className="min-w-0 flex-1 overflow-y-auto pb-[calc(70px+env(safe-area-inset-bottom))] md:pb-0">{children}</div>
+          <div ref={scroller} className="min-w-0 flex-1 overflow-y-auto pb-[calc(70px+env(safe-area-inset-bottom))] md:pb-0">{children}</div>
+          {showTop && (
+            <button
+              type="button"
+              onClick={() => scroller.current?.scrollTo({ top: 0, behavior: "smooth" })}
+              className="fixed bottom-[calc(80px+env(safe-area-inset-bottom))] left-3 z-30 rounded-full border border-border bg-surface px-3.5 py-2 text-[12.5px] font-semibold text-text-soft shadow-card hover:text-accent-strong md:bottom-5 md:left-[17rem]"
+            >
+              ↑ Haut de page
+            </button>
+          )}
           <AIProgressDock />
         </div>
       </div>

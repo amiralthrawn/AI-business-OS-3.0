@@ -11,6 +11,8 @@ import GuideCard from "@/components/home/GuideCard";
 import DecisionFeed from "@/components/home/DecisionFeed";
 import HomeAskAI from "@/components/home/HomeAskAI";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
+import Collapsible from "@/components/ui/Collapsible";
+import SectionNav from "@/components/home/SectionNav";
 import Card from "@/components/ui/Card";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import PageHeader from "@/components/ui/PageHeader";
@@ -80,30 +82,46 @@ export default async function CommandCenterPage({ searchParams }: { searchParams
             )}
           </section>
 
-          {agents && <AgentFeed proposals={agents.proposals} />}
+          <SectionNav
+            items={[
+              { id: "todo", label: "À faire" },
+              ...(agents?.guide && agents.guide.percent < 100 ? [{ id: "setup", label: `Configuration ${agents.guide.percent} %` }] : []),
+              { id: "activity", label: "Activité de l'IA" },
+              { id: "decisions", label: "Décisions" },
+              ...(can(me?.permissions, "action:ask_ai") ? [{ id: "ask", label: "Une question" }] : []),
+            ]}
+          />
 
-          {agents && agents.agents.length > 0 && <BrowserNotice />}
-          {agents?.guide?.steps.some((st) => st.href === "/communications?tab=website") && <SiteIntegration websiteUrl={company?.website_url ?? null} compact />}
-          {agents?.guide?.steps.some((st) => st.href.startsWith("/?service=")) && <ServiceConnections />}
-          {agents?.guide && <GuideCard guide={agents.guide} />}
+          <section id="todo" className="scroll-mt-16">{agents && <AgentFeed proposals={agents.proposals} />}</section>
+
+          {agents?.guide && agents.guide.percent < 100 && (
+            <Collapsible id="setup" title="Terminer la configuration" hint={`${agents.guide.percent} % · ${agents.guide.steps.length} étape(s)`} defaultOpen={agents.guide.percent < 60}>
+              {agents.agents.length > 0 && <BrowserNotice />}
+              {agents.guide.steps.some((st) => st.href === "/communications?tab=website") && <SiteIntegration websiteUrl={company?.website_url ?? null} compact />}
+              {agents.guide.steps.some((st) => st.href.startsWith("/?service=")) && <ServiceConnections />}
+              <GuideCard guide={agents.guide} />
+            </Collapsible>
+          )}
 
           {home.briefing && <BriefingCard briefing={home.briefing} viewer={home.viewer} />}
 
-          {agents && agents.agents.length > 0 && <LivePulse agents={agents.agents} open={agents.proposals.filter((p) => p.kind === "missing_info").length} />}
-          {agents && agents.agents.length > 0 && <ActivityPanel />}
+          {agents && agents.agents.length > 0 && (
+            <Collapsible id="activity" title="Activité de l'IA" defaultOpen={false}>
+              <LivePulse agents={agents.agents} open={agents.proposals.filter((p) => p.kind === "missing_info").length} />
+              <ActivityPanel />
+            </Collapsible>
+          )}
 
-          <section>
-            <span className="mb-4 block text-[11.5px] font-bold uppercase tracking-wide text-text-faint">Vos décisions, par montant concerné</span>
+          <Collapsible id="decisions" title="Vos décisions, par montant concerné" hint={signals.length + pendingTasks.length > 0 ? `${signals.length + pendingTasks.length}` : undefined}>
             <DecisionFeed items={signals} tasks={pendingTasks} />
-          </section>
+          </Collapsible>
 
           {can(me?.permissions, "action:ask_ai") && (
-            <section>
-              <span className="mb-4 block text-[11.5px] font-bold uppercase tracking-wide text-text-faint">Une question ?</span>
+            <Collapsible id="ask" title="Une question ?" defaultOpen={false}>
               <Card className="p-6">
                 <HomeAskAI />
               </Card>
-            </section>
+            </Collapsible>
           )}
 
           <p className="text-center text-[13px] text-text-soft">
