@@ -49,7 +49,7 @@ export default function SiteIntegration({ websiteUrl, intelligence, compact = fa
           <Button
             loading={busy === "integrate"}
             disabled={busy !== null || url.trim().length < 4}
-            onClick={() => act("integrate", async () => { const r = await integrateWebsite(url.trim()); return `Site lu (${r.pages} page${r.pages > 1 ? "s" : ""}) : ${r.created} proposition${r.created > 1 ? "s" : ""} ajoutée${r.created > 1 ? "s" : ""} aux décisions.`; })}
+            onClick={() => act("integrate", async () => { const r = await integrateWebsite(url.trim()); return `${r.indirect ? "Votre site bloque les lectures automatiques : je l\u2019ai étudié via la recherche web (lecture indirecte, moins détaillée)." : `Site lu (${r.pages} page${r.pages > 1 ? "s" : ""}).`} ${r.created} proposition${r.created > 1 ? "s" : ""} ajoutée${r.created > 1 ? "s" : ""} aux décisions.`; })}
           >
             {a ? "Relire mon site" : "Intégrer et analyser mon site"}
           </Button>

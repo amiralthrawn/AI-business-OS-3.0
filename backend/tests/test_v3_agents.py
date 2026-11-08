@@ -365,3 +365,21 @@ def test_a_company_without_site_can_ask_for_one(client):
     assert state["intelligence"]["request"]["status"] == "requested"
     guide = client.get("/agents/overview", headers=headers).json()["guide"]
     assert not any("Ajouter le site web" in s["title"] for s in guide["steps"])
+
+
+def test_blocked_site_falls_back_to_a_sourced_web_search(client, monkeypatch):
+    from app.agents import perplexity
+    from app.website import intelligence
+
+    headers = _director(client, "Block Co", "block@co.example")
+    client.patch("/company", headers=headers, json={"website_url": "fecomponents.shop"})
+    def blocked(url):
+        raise intelligence.SiteError("Impossible de lire le site (https://fecomponents.shop/ : HTTP 403).", blocked=True)
+    monkeypatch.setattr(intelligence, "crawl", blocked)
+    monkeypatch.setattr(perplexity, "configured", lambda: True)
+    monkeypatch.setattr(perplexity, "ask", lambda system, user, **kw: ("FE Components vend des composants électroniques en ligne.", ["https://example.org/fe"]))
+    res = client.post("/website/integrate", headers=headers, json={}).json()
+    assert res["indirect"] is True and res["pages"] == 1
+    monkeypatch.setattr(perplexity, "ask", lambda system, user, **kw: ("NON_TROUVE", []))
+    again = client.post("/website/integrate", headers=headers, json={})
+    assert again.status_code == 400 and "bloque" in again.json()["detail"]

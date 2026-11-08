@@ -29,7 +29,9 @@ SOCIAL = ("linkedin.com", "facebook.com", "instagram.com", "twitter.com", "x.com
 
 
 class SiteError(RuntimeError):
-    pass
+    def __init__(self, message: str, blocked: bool = False) -> None:
+        super().__init__(message)
+        self.blocked = blocked
 
 
 def normalise_url(raw: str) -> str:
@@ -127,19 +129,24 @@ def crawl(url: str) -> dict:
         variants.append(base_url.replace(host, f"www.{host}", 1))
     variants.append(base_url.replace("https://", "http://", 1))
     with httpx.Client(timeout=12.0, follow_redirects=True, headers={"User-Agent": UA, "Accept-Language": "fr,en;q=0.8"}) as client:
-        start, reason = None, ""
+        start, attempts = None, []
         for candidate in variants:
             try:
                 status, body, final = _fetch(client, candidate)
             except httpx.HTTPError as exc:
-                reason = f"{candidate} injoignable ({type(exc).__name__})"
+                attempts.append(f"{candidate} injoignable ({type(exc).__name__})")
                 continue
             if status == 200 and body:
                 start = (final, body)
                 break
-            reason = f"{candidate} a répondu HTTP {status}" + (" : le site refuse les lectures automatiques" if status in (401, 403) else "")
+            attempts.append(f"{candidate} : HTTP {status}")
         if start is None:
-            raise SiteError(f"Impossible de lire le site : {reason or 'aucune réponse'}.")
+            blocked = any("HTTP 403" in a or "HTTP 401" in a or "HTTP 429" in a for a in attempts)
+            raise SiteError(
+                f"Impossible de lire le site ({' ; '.join(attempts) or 'aucune réponse'})."
+                + (" Le site (ou son hébergeur) bloque les lectures automatiques." if blocked else ""),
+                blocked=blocked,
+            )
         base, first_html = start
         netloc = urlparse(base).netloc
         if not _robots_ok(client, base):
@@ -247,6 +254,23 @@ def understand(company_name: str, site: dict) -> tuple[dict, bool]:
     }, False
 
 
+def research(url: str) -> dict:
+    """Fallback when the site blocks automated readers: a sourced web search about it."""
+
+    host = urlparse(normalise_url(url)).hostname or url
+    try:
+        text, sources = perplexity.ask(
+            "Tu décris précisément un site web d'entreprise à partir de ce que tu trouves en ligne (le site lui-même, ses pages produits, annuaires, avis). N'invente rien. Donne : activité, produits ou services, public visé, positionnement, coordonnées publiques, points faibles visibles. Si tu ne trouves rien, réponds exactement : NON_TROUVE.",
+            f"Site : {host} ({normalise_url(url)})",
+        )
+    except perplexity.PerplexityError as exc:
+        raise SiteError(f"Site bloqué et recherche de secours indisponible : {str(exc)[:200]}") from exc
+    if "NON_TROUVE" in text or not sources:
+        raise SiteError("Le site bloque les lectures automatiques et la recherche web n'a rien trouvé de fiable à son sujet. Vous pouvez décrire votre activité dans la configuration.")
+    emails = sorted(set(re.findall(r"[\w.\-+]+@[\w\-]+\.[\w.\-]+", text)))[:4]
+    return {"url": normalise_url(url), "pages": [{"url": normalise_url(url), "title": host, "description": "", "headings": [], "text": text[:PAGE_TEXT * 2], "words": len(text.split())}], "emails": emails, "phones": [], "social": [], "schema": []}
+
+
 def integrate(session: Session, company: Company) -> dict:
     """Crawl, understand, store, share, and turn the improvements into proposals."""
 
@@ -254,7 +278,14 @@ def integrate(session: Session, company: Company) -> dict:
 
     if not company.website_url:
         raise SiteError("Aucun site web renseigné.")
-    site = crawl(company.website_url)
+    indirect = False
+    try:
+        site = crawl(company.website_url)
+    except SiteError as exc:
+        if not exc.blocked or not perplexity.configured():
+            raise
+        site = research(company.website_url)  # blocked for robots: read what the web knows about it
+        indirect = True
     analysis, by_model = understand(company.name, site)
 
     catalog = [n.lower() for (n,) in session.query(Product.name).filter(Product.company_id == company.id).limit(20000).all()]
@@ -265,7 +296,7 @@ def integrate(session: Session, company: Company) -> dict:
     config["website"] = {
         "url": site["url"], "analysed_at": datetime.now(timezone.utc).isoformat(), "by_model": by_model, "pages": [{"url": p["url"], "title": p["title"], "words": p["words"]} for p in site["pages"]],
         "emails": site["emails"], "phones": site["phones"], "social": site["social"], "analysis": analysis, "not_in_catalog": missing[:12],
-        "request": (config.get("website") or {}).get("request"),
+        "request": (config.get("website") or {}).get("request"), "indirect": indirect,
     }
     context.configuration = config
     session.commit()
@@ -282,7 +313,7 @@ def integrate(session: Session, company: Company) -> dict:
         created += agents._ingest(session, company, item, [site["url"]], agent="analyste")
     session.commit()
     agents.remember(session, company.id, "analyste", "Analyse du site web", analysis["summary"], [i["title"] for i in analysis["improvements"]])
-    return {"pages": len(site["pages"]), "by_model": by_model, "created": created, "analysis": analysis, "not_in_catalog": missing[:12], "emails": site["emails"], "phones": site["phones"], "social": site["social"]}
+    return {"indirect": indirect, "pages": len(site["pages"]), "by_model": by_model, "created": created, "analysis": analysis, "not_in_catalog": missing[:12], "emails": site["emails"], "phones": site["phones"], "social": site["social"]}
 
 
 def state(session: Session, company_id: uuid.UUID) -> dict | None:
