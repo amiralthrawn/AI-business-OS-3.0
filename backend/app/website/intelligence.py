@@ -286,6 +286,10 @@ def integrate(session: Session, company: Company) -> dict:
             raise
         site = research(company.website_url)  # blocked for robots: read what the web knows about it
         indirect = True
+        from app.browser import manager
+
+        if manager.available():
+            agents._ingest(session, company, {"category": "site web", "title": "Laisser l'IA lire votre site dans le navigateur", "summary": "Votre site bloque les lectures automatiques : un navigateur réel, suivi par vous, peut le lire en entier.", "why_it_matters": "L'analyse actuelle est indirecte et moins détaillée.", "suggested_action": {"type": "browser", "text": f"Ouvre {company.website_url}, parcours les pages principales (accueil, produits, à propos, contact) et résume l'activité, l'offre et les coordonnées.", "url": company.website_url}}, [], agent="analyste")
     analysis, by_model = understand(company.name, site)
 
     catalog = [n.lower() for (n,) in session.query(Product.name).filter(Product.company_id == company.id).limit(20000).all()]

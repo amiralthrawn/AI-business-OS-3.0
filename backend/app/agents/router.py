@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.access import policy as access
 from app.access.deps import CurrentUser, get_current_user, require
 from app.agents import perplexity, service, veilleur_agent
+from app.browser import manager as browser_manager
 from app.core.entities import AgentProposal, Company
 from app.core.i18n import tx
 from app.database import get_db
@@ -17,6 +18,7 @@ LABELS = {
     "veilleur": ("Veilleur", "Cherche en continu sur le web tout ce qui peut compter pour l'entreprise : salons, prix, concurrents, réglementation, votre réputation."),
     "analyste": ("Analyste", "Lit vos chiffres et vos échanges pour repérer risques et opportunités."),
     "executant": ("Exécutant", "Fait réellement le travail dans votre logiciel : complète le catalogue, les fiches fournisseurs et clients, le calendrier, prépare les e-mails (jamais envoyés sans vous)."),
+    "navigateur": ("Navigateur", "Travaille à votre place dans un vrai navigateur que vous suivez : exporte un fichier d'un logiciel, lit un site protégé, configure un accès. Vous prenez la main pour vous connecter."),
     "guide": ("Guide de connexion", "Cherche pour chaque outil comment en sortir les données, vous guide pas à pas et propose la suite."),
 }
 
@@ -82,7 +84,7 @@ def overview(db: Session = Depends(get_db), user: CurrentUser = Depends(get_curr
     agents = []
     for key, (label, description) in LABELS.items():
         run = service.last_run(db, company.id, key)
-        configured = veilleur_agent.enabled() if key == "executant" else perplexity.configured() if key in ("veilleur", "guide") else True
+        configured = browser_manager.available() if key == "navigateur" else veilleur_agent.enabled() if key == "executant" else perplexity.configured() if key in ("veilleur", "guide") else True
         agents.append({
             "key": key, "label": label, "description": description, "configured": configured,
             "model": service.model_in_use(key), "memory_count": len(service.memory_items(db, company.id, key)), "recent_runs": service.recent_runs(db, company.id, key),
@@ -160,7 +162,10 @@ def accept(proposal_id: uuid.UUID, db: Session = Depends(get_db), user: CurrentU
     proposal = _proposal(db, proposal_id)
     if proposal.status != "new":
         raise HTTPException(status_code=409, detail=tx("Déjà traité.", "Already handled."))
-    service.execute(db, proposal, automatic=False)
+    try:
+        service.execute(db, proposal, automatic=False)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     db.commit()
     return _read(proposal)
 

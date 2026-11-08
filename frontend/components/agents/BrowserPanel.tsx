@@ -14,7 +14,7 @@ const OVER = ["done", "failed", "cancelled"];
 // The AI browser: the AI works in a browser shown here. The person watches,
 // takes over to log in or validate (what they type goes straight to the page),
 // and hands back.
-export default function BrowserPanel({ initialGoal = "", autoStart = false }: { initialGoal?: string; autoStart?: boolean }) {
+export default function BrowserPanel({ initialGoal = "", autoStart = false, embedded = false }: { initialGoal?: string; autoStart?: boolean; embedded?: boolean }) {
   const [info, setInfo] = useState<BrowserStatus | null>(null);
   const [task, setTask] = useState<BrowserTask | null>(null);
   const [goal, setGoal] = useState(initialGoal);
@@ -82,11 +82,13 @@ export default function BrowserPanel({ initialGoal = "", autoStart = false }: { 
   }
 
   return (
-    <Card className="space-y-4 p-4 sm:p-6">
-      <div>
-        <h2 className="font-display text-[22px] italic">Navigateur de l&rsquo;IA</h2>
-        <p className="text-[13px] text-text-soft">L&rsquo;IA travaille dans un vrai navigateur, sous vos yeux : exporter un fichier d&rsquo;un logiciel, relever une information, configurer un accès. Quand il faut vous connecter ou valider, elle vous passe la main.</p>
-      </div>
+    <Wrap embedded={embedded}>
+      {!embedded && (
+        <div>
+          <h2 className="font-display text-[22px] italic">Navigateur de l&rsquo;IA</h2>
+          <p className="text-[13px] text-text-soft">L&rsquo;IA travaille dans un vrai navigateur, sous vos yeux : exporter un fichier d&rsquo;un logiciel, relever une information, configurer un accès. Quand il faut vous connecter ou valider, elle vous passe la main.</p>
+        </div>
+      )}
 
       {info && !info.available && !task && (
         <p className="rounded-xl bg-surface-sunken p-3.5 text-[13px] text-text-soft">Le navigateur de l&rsquo;IA n&rsquo;est pas encore activé sur ce serveur (clés du navigateur cloud et OpenRouter à renseigner).</p>
@@ -163,6 +165,10 @@ export default function BrowserPanel({ initialGoal = "", autoStart = false }: { 
           </details>
         </div>
       )}
-    </Card>
+    </Wrap>
   );
+}
+
+function Wrap({ embedded, children }: { embedded: boolean; children: React.ReactNode }) {
+  return embedded ? <div className="space-y-4">{children}</div> : <Card className="space-y-4 p-4 sm:p-6">{children}</Card>;
 }

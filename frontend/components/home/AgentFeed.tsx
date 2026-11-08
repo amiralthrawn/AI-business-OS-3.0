@@ -6,8 +6,8 @@ import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import { type AgentProposal, agentsCall } from "@/lib/api";
 
-const ACTION_LABEL: Record<string, string> = { calendar_event: "Ajouter au calendrier", task: "Créer la tâche" };
-const AUTO_LABEL: Record<string, string> = { calendar_event: "Ajouté au calendrier", task: "Tâche créée", none: "Fait" };
+const ACTION_LABEL: Record<string, string> = { calendar_event: "Ajouter au calendrier", task: "Créer la tâche", browser: "Lancer l\u2019IA dans le navigateur" };
+const AUTO_LABEL: Record<string, string> = { calendar_event: "Ajouté au calendrier", task: "Tâche créée", browser: "Navigateur lancé : suivez-le dans Agents IA", none: "Fait" };
 
 function host(url: string) {
   try {
@@ -80,7 +80,7 @@ export default function AgentFeed({ proposals }: { proposals: AgentProposal[] })
         return (
           <Card key={p.id} className="p-6">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge label={p.agent === "analyste" ? "Proposé par l'Analyste" : "Trouvé par le Veilleur"} tone="accent" />
+              <Badge label={p.action_type === "browser" ? "Le navigateur peut le faire" : p.agent === "analyste" ? "Proposé par l'Analyste" : p.agent === "guide" ? "Proposé par le Guide" : "Trouvé par le Veilleur"} tone="accent" />
               {p.category && <span className="text-[11px] font-bold uppercase tracking-wide text-accent-strong">{p.category}</span>}
               {p.event_date && <span className="ml-auto text-[13px] font-semibold text-text">{new Date(p.event_date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}</span>}
             </div>

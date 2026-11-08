@@ -276,7 +276,8 @@ def _book(task: Task) -> None:
     try:
         with SessionLocal() as db:
             scope_session(db, task.company_id)
-            service.log_run(db, task.company_id, "executant", "ok" if task.status == "done" else "error", f"Navigateur : {task.goal[:140]} ({task.status})", len(task.downloads))
+            service.log_run(db, task.company_id, "navigateur", "ok" if task.status == "done" else "error", f"{task.goal[:140]} ({task.status})", len(task.downloads))
+            service.remember(db, task.company_id, "navigateur", task.goal, task.summary or task.status)
     except Exception:
         pass
 

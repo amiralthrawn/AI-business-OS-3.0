@@ -32,9 +32,9 @@ from app.core.entities import (
     UserProfile,
 )
 
-ACTION_TYPES = ("calendar_event", "task")
+ACTION_TYPES = ("calendar_event", "task", "browser")
 AUTONOMY_KEYS = (*ACTION_TYPES, "execute")  # "execute": the Exécutant does accepted tasks by itself
-DEFAULT_SETTINGS = {"enabled": True, "autonomy": {"calendar_event": "ask", "task": "ask", "execute": "ask"}}
+DEFAULT_SETTINGS = {"enabled": True, "autonomy": {"calendar_event": "ask", "task": "ask", "browser": "ask", "execute": "ask"}}
 PARIS = ZoneInfo("Europe/Paris")
 MAX_TOPICS = 12
 
@@ -110,6 +110,7 @@ AGENT_LABELS = {
     "analyste": "Analyste",
     "guide": "Guide de connexion",
     "executant": "Exécutant",
+    "navigateur": "Navigateur",
 }
 
 
@@ -128,6 +129,11 @@ def routes(agent: str) -> list[dict]:
             {"task": "Chercher sur le web avec sources (prix, salons, concurrents, actualités)", "model": settings.openrouter_model},
             {"task": "Lire une page web que vous indiquez (OEMsTrade, Accuris…)", "model": None},
             {"task": "Comparer avec vos produits, stocks, fournisseurs, clients (Analyste)", "model": None},
+        ]
+    if agent == "navigateur":
+        return [
+            {"task": "Regarder l'écran, décider chaque clic ou saisie, rendre compte", "model": settings.openrouter_agent_model},
+            {"task": "Faire tourner le navigateur (cloud), que vous suivez et dont vous pouvez prendre la main", "model": None},
         ]
     if agent == "executant":
         return [
@@ -161,6 +167,12 @@ def model_in_use(agent: str) -> dict:
 
 
 def _model_in_use(agent: str, settings) -> dict:
+    if agent == "navigateur":
+        from app.browser import manager
+
+        if manager.available():
+            return {"provider": "Browserbase + OpenRouter", "model": settings.openrouter_agent_model, "kind": "agent", "note": "Navigateur cloud que l'IA pilote sous vos yeux (elle regarde l'écran, clique, tape) ; vous prenez la main pour vous connecter."}
+        return {"provider": None, "model": None, "kind": "agent", "note": "Navigateur cloud non activé : clé BROWSERBASE_API_KEY et OPENROUTER_API_KEY à renseigner."}
     if agent == "executant":
         if (settings.openrouter_api_key or "").strip():
             return {"provider": "OpenRouter", "model": settings.openrouter_agent_model, "kind": "agent", "note": "IA générative avec outils : fait réellement les tâches dans votre logiciel (catalogue, fiches, calendrier, brouillons d'e-mails). N'envoie rien à l'extérieur."}
@@ -529,7 +541,39 @@ def run_analyste(session: Session, company: Company) -> AgentRun:
     session.commit()
     remember(session, company.id, "analyste", "Analyse de vos données", summary)
     _refresh_site(session, company)
+    try:
+        suggest_browser_tasks(session, company)
+    except Exception:
+        session.rollback()
     return run
+
+
+def suggest_browser_tasks(session: Session, company: Company) -> int:
+    """Where the browser can save the person real work, say so in the decisions:
+    each declared tool whose data was never brought in is offered to the AI."""
+
+    from app.browser import manager
+    from app.configuration import guide as config_guide, tools as config_tools
+
+    if not manager.available():
+        return 0
+    config = config_service.get_configuration(session, company.id)
+    open_count = session.query(AgentProposal).filter_by(company_id=company.id, agent="guide", action_type="browser", status="new").count()
+    created = 0
+    for key, state in (config.get("tools") or {}).items():
+        info = config_tools.tool_info(key)
+        if info is None or open_count + created >= 3:
+            continue
+        label, category = info
+        if config_guide.is_connection(key, category) or state.get("data") == "imported" or not category.import_kinds:
+            continue
+        kinds = ", ".join(config_guide.KIND_LABEL[k] for k in category.import_kinds)
+        goal = f"Exporte depuis {label} les données utiles ({kinds}) au format CSV ou Excel, puis rends-moi la main avec le fichier."
+        item = {"category": "navigateur", "title": f"Laisser l'IA exporter vos données depuis {label}", "summary": f"L'IA ouvre {label} dans un navigateur que vous suivez, vous passe la main pour vous connecter, exporte {kinds} et verse le fichier dans le logiciel.",
+                "why_it_matters": f"Vos {kinds} de {label} ne sont pas encore dans le logiciel : sans eux, marges, stocks et alertes restent partiels.", "suggested_action": {"type": "browser", "text": goal}}
+        created += _ingest(session, company, item, [], agent="guide")
+    session.commit()
+    return created
 
 
 def _refresh_site(session: Session, company: Company) -> None:
@@ -564,7 +608,7 @@ def _ingest(session: Session, company: Company, item: dict, sources: list[str], 
         company_id=company.id, agent=agent, kind="finding", category=category, title=title,
         summary=str(item.get("summary") or "")[:1500] or None, why=str(item.get("why_it_matters") or "")[:1500] or None,
         sources=sources[:6], event_date=when, action_type=action,
-        action_payload={"text": str(suggestion.get("text") or title)[:255]} if action != "none" else None,
+        action_payload=({"text": str(suggestion.get("text") or title)[:500], **({"url": str(suggestion["url"])[:500]} if suggestion.get("url") else {})}) if action != "none" else None,
         status="new", dedupe_key=key,
     )
     session.add(proposal)
@@ -584,7 +628,10 @@ def _ingest(session: Session, company: Company, item: dict, sources: list[str], 
             session.rollback()
             session.add(proposal)
     elif action != "none" and autonomy.get(action) == "auto":
-        execute(session, proposal, automatic=True)
+        try:
+            execute(session, proposal, automatic=True)
+        except RuntimeError:
+            pass  # e.g. a browser task is already running: the card stays for the person
     session.flush()
     return True
 
@@ -602,6 +649,13 @@ def execute(session: Session, proposal: AgentProposal, *, automatic: bool) -> No
         session.add(event)
         session.flush()
         ref["calendar_event"] = str(event.id)
+    elif proposal.action_type == "browser":
+        from app.browser import manager
+
+        if not manager.available():
+            raise RuntimeError("Le navigateur de l'IA n'est pas activé sur ce serveur.")
+        started = manager.start(proposal.company_id, str(payload.get("text") or proposal.title), payload.get("url"))
+        ref["browser_task"] = started.id
     elif proposal.action_type == "task":
         from app.actions.service import ActionsService
         from app.event_bus import event_bus
@@ -668,6 +722,12 @@ def undo(session: Session, proposal: AgentProposal) -> None:
         event = session.get(CalendarEvent, uuid.UUID(ref["calendar_event"]))
         if event is not None:
             session.delete(event)
+    if ref.get("browser_task"):
+        from app.browser import manager
+
+        running = manager.TASKS.get(ref["browser_task"])
+        if running is not None:
+            manager.cancel(running)
     if ref.get("task"):
         task = session.get(Task, uuid.UUID(ref["task"]))
         if task is not None:

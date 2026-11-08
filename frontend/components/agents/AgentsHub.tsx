@@ -15,6 +15,7 @@ const MODEL_CHOICES: Record<string, string[]> = {
   veilleur: ["Perplexity Sonar Pro", "Perplexity Sonar", "Google Gemini", "Un autre modèle (précisez)"],
   guide: ["Perplexity Sonar Pro", "Perplexity Sonar", "Google Gemini", "Un autre modèle (précisez)"],
   analyste: ["Ajouter un modèle de langage (Claude, GPT…)", "Un autre modèle (précisez)"],
+  navigateur: ["Un modèle plus puissant pour les sites difficiles", "Un modèle moins cher", "Un autre modèle (précisez)"],
   executant: ["Un modèle plus puissant pour les tâches complexes", "Un modèle moins cher", "Un autre modèle (précisez)"],
 };
 const fmtNum = (n: number) => new Intl.NumberFormat("fr-FR").format(n);
@@ -37,10 +38,9 @@ export default function AgentsHub({ overview, browserGoal }: { overview: AgentsO
 
   return (
     <div className="space-y-6">
-      <BrowserPanel initialGoal={browserGoal ?? ""} />
       {usage && <UsagePanel usage={usage} agents={agents} />}
       {agents.map((a) => (
-        <AgentCard key={a.key} agent={a} usage={usage?.agents[a.key]} catalog={usage?.catalog ?? []} requests={requests.filter((r) => r.agent === a.key)} onChanged={refresh} />
+        <AgentCard key={a.key} browserGoal={browserGoal} agent={a} usage={usage?.agents[a.key]} catalog={usage?.catalog ?? []} requests={requests.filter((r) => r.agent === a.key)} onChanged={refresh} />
       ))}
       <p className="text-center text-[12.5px] text-text-faint">
         Les réglages (agir seul ou demander, sujets suivis, activation) sont dans{" "}
@@ -50,7 +50,7 @@ export default function AgentsHub({ overview, browserGoal }: { overview: AgentsO
   );
 }
 
-function AgentCard({ agent, requests, usage, catalog, onChanged }: { agent: Agent; requests: ModelRequest[]; usage?: AgentsUsage["agents"][string]; catalog: AgentsUsage["catalog"]; onChanged: () => Promise<void> }) {
+function AgentCard({ agent, requests, usage, catalog, onChanged, browserGoal }: { browserGoal?: string; agent: Agent; requests: ModelRequest[]; usage?: AgentsUsage["agents"][string]; catalog: AgentsUsage["catalog"]; onChanged: () => Promise<void> }) {
   const last = agent.recent_runs?.[0];
   const [showRuns, setShowRuns] = useState(false);
   return (
@@ -120,14 +120,14 @@ function AgentCard({ agent, requests, usage, catalog, onChanged }: { agent: Agen
       </div>
 
       <MemoryLine agent={agent} onChanged={onChanged} />
-      <DirectRequest agent={agent} onDone={onChanged} />
+      {agent.key === "navigateur" ? <BrowserPanel initialGoal={browserGoal ?? ""} embedded /> : <DirectRequest agent={agent} onDone={onChanged} />}
     </Card>
   );
 }
 
 function ModelRequestForm({ agent, catalog, onSent }: { agent: Agent; catalog: AgentsUsage["catalog"]; onSent: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
-  const priced = agent.key === "analyste" || agent.key === "executant" ? [] : catalog.map((m) => `${m.label} · ${fmtUsd(m.usd_per_m_in)} / ${fmtUsd(m.usd_per_m_out)} par million de tokens (entrée / sortie)${m.usd_per_request ? ` + ${fmtUsd(m.usd_per_request)} par recherche` : ""}`);
+  const priced = agent.key === "analyste" || agent.key === "executant" || agent.key === "navigateur" ? [] : catalog.map((m) => `${m.label} · ${fmtUsd(m.usd_per_m_in)} / ${fmtUsd(m.usd_per_m_out)} par million de tokens (entrée / sortie)${m.usd_per_request ? ` + ${fmtUsd(m.usd_per_request)} par recherche` : ""}`);
   const choices = priced.length ? [...priced, "Un autre modèle (précisez)"] : MODEL_CHOICES[agent.key] ?? ["Un autre modèle (précisez)"];
   const [choice, setChoice] = useState(choices[0]);
   const [detail, setDetail] = useState("");

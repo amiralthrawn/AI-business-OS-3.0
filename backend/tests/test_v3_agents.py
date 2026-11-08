@@ -71,7 +71,7 @@ def test_in_auto_mode_the_agent_acts_and_the_person_can_undo(client, monkeypatch
     monkeypatch.setattr(get_settings(), "perplexity_api_key", "k")
     monkeypatch.setattr(perplexity, "ask", lambda system, user, **kw: (FOUND, []))
     headers = _director(client)
-    assert client.put("/agents/settings", headers=headers, json={"enabled": True, "autonomy": {"calendar_event": "auto"}}).json()["autonomy"] == {"calendar_event": "auto", "task": "ask", "execute": "ask"}
+    assert client.put("/agents/settings", headers=headers, json={"enabled": True, "autonomy": {"calendar_event": "auto"}}).json()["autonomy"] == {"calendar_event": "auto", "task": "ask", "browser": "ask", "execute": "ask"}
     client.post("/agents/veilleur/run", headers=headers)
     window = {"start": "2099-11-01T00:00:00Z", "end": "2099-12-01T00:00:00Z"}
     assert len(client.get("/calendar", headers=headers, params=window).json()["events"]) == 1
@@ -209,7 +209,7 @@ def test_agents_overview_shows_models_runs_and_model_requests(client, monkeypatc
     assert ask.status_code == 200 and ask.json()["status"] == "ok" and ask.json()["found"][0]["title"] == "Electronica Munich"
     overview = client.get("/agents/overview", headers=headers).json()
     agents = {a["key"]: a for a in overview["agents"]}
-    assert set(agents) == {"veilleur", "analyste", "guide", "executant"}
+    assert set(agents) == {"veilleur", "analyste", "guide", "executant", "navigateur"}
     assert agents["veilleur"]["model"]["provider"] == "OpenRouter" and agents["analyste"]["model"]["kind"] == "rules"
     assert agents["veilleur"]["recent_runs"][0]["message"].startswith("1 résultat")
     assert overview["settings"]["watch_topics"] == ["Salon Electronica Munich : exposants"]
@@ -521,3 +521,25 @@ def test_gmail_oauth_connection_is_read_only_encrypted_and_ingests_mail(client, 
     assert "/?service=mail" not in [x["href"] for x in client.get("/agents/overview", headers=headers).json()["guide"]["steps"]]
     assert client.get("/oauth/google/callback", params={"code": "abc", "state": "forged"}, follow_redirects=False).headers["location"].find("oauth_error") > 0
     assert client.delete("/oauth/google", headers=headers).status_code == 204
+
+
+def test_decisions_recommend_the_browser_and_it_can_run_alone(client, monkeypatch):
+    from app.browser import manager
+
+    headers = _director(client, "Nav Co", "nav@co.example")
+    started = []
+    monkeypatch.setattr(manager, "available", lambda: True)
+    class T:  # stands for a started browser task
+        id = "task42"
+    monkeypatch.setattr(manager, "start", lambda company_id, goal, url=None: started.append((goal, url)) or T())
+    assert client.put("/configuration", headers=headers, json={"sector_key": "electronics_trading", "tools": ["pennylane"]}).status_code == 200
+    client.post("/agents/analyste/run", headers=headers)
+    cards = [p for p in client.get("/agents/overview", headers=headers).json()["proposals"] if p["action_type"] == "browser"]
+    assert len(cards) == 1 and "Pennylane" in cards[0]["title"] and cards[0]["agent"] == "guide"
+    accepted = client.post(f"/agents/proposals/{cards[0]['id']}/accept", headers=headers).json()
+    assert accepted["status"] == "accepted" and started and "Pennylane" in started[0][0]
+    # autonomy: the next recommendation runs without being consulted
+    client.put("/agents/settings", headers=headers, json={"enabled": True, "autonomy": {"browser": "auto"}})
+    client.put("/configuration", headers=headers, json={"sector_key": "electronics_trading", "tools": ["pennylane", "sage_compta"]})
+    client.post("/agents/analyste/run", headers=headers)
+    assert len(started) == 2 and any(p["status"] == "auto_done" and p["action_type"] == "browser" for p in client.get("/agents/overview", headers=headers).json()["proposals"])

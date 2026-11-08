@@ -626,7 +626,7 @@ export type AgentProposal = {
   why: string | null;
   sources: string[];
   event_date: string | null;
-  action_type: "calendar_event" | "task" | "none";
+  action_type: "calendar_event" | "task" | "browser" | "none";
   action_text: string | null;
   status: "new" | "auto_done" | "accepted" | "ignored" | "undone" | "answered";
   created_at: string;
