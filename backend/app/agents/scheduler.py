@@ -6,7 +6,7 @@ in its own scoped session so nothing crosses companies."""
 import asyncio
 import logging
 
-from app.agents import perplexity, service
+from app.agents import directeur, perplexity, service
 from app.core.entities import Company
 from app.core.tenant_scope import scope_session
 from app.database import SessionLocal
@@ -51,6 +51,8 @@ def run_cycle() -> None:
                     service.run_analyste(db, company)
                 if perplexity.configured() and service.is_due(db, company.id, "veilleur", hours):
                     service.run_veilleur(db, company)
+                if service.is_due(db, company.id, "directeur", 1):
+                    directeur.run_directeur(db, company)
             except Exception:  # one company's failure must never stop the others
                 db.rollback()
                 log.exception("agent cycle failed for %s", company_id)

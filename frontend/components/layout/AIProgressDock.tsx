@@ -5,7 +5,7 @@ import { agentsCall } from "@/lib/api";
 
 type Job = { agent: string; label: string; status: "running" | "done" | "error" | "cancelled"; percent: number; steps: string[]; elapsed: number; started: number; cancelling: boolean };
 
-const NAME: Record<string, string> = { analyste: "Analyste", veilleur: "Veilleur", guide: "Guide", executant: "Exécutant", navigateur: "Navigateur" };
+const NAME: Record<string, string> = { directeur: "Directeur", analyste: "Analyste", veilleur: "Veilleur", guide: "Guide", executant: "Exécutant", navigateur: "Navigateur" };
 
 // A small card that follows the person through the app and tells what the AI
 // is doing right now. The work runs on the server: changing page never stops

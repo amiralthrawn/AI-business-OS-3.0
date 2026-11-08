@@ -1,5 +1,6 @@
 "use client";
 
+import DirecteurPanel from "@/components/agents/DirecteurPanel";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import BrowserPanel from "@/components/agents/BrowserPanel";
@@ -15,6 +16,7 @@ const MODEL_CHOICES: Record<string, string[]> = {
   veilleur: ["Perplexity Sonar Pro", "Perplexity Sonar", "Google Gemini", "Un autre modèle (précisez)"],
   guide: ["Perplexity Sonar Pro", "Perplexity Sonar", "Google Gemini", "Un autre modèle (précisez)"],
   analyste: ["Ajouter un modèle de langage (Claude, GPT…)", "Un autre modèle (précisez)"],
+  directeur: ["Un modèle plus puissant pour mieux piloter", "Un modèle moins cher", "Un autre modèle (précisez)"],
   navigateur: ["Un modèle plus puissant pour les sites difficiles", "Un modèle moins cher", "Un autre modèle (précisez)"],
   executant: ["Un modèle plus puissant pour les tâches complexes", "Un modèle moins cher", "Un autre modèle (précisez)"],
 };
@@ -120,7 +122,7 @@ function AgentCard({ agent, requests, usage, catalog, onChanged, browserGoal }: 
       </div>
 
       <MemoryLine agent={agent} onChanged={onChanged} />
-      {agent.key === "navigateur" ? <BrowserPanel initialGoal={browserGoal ?? ""} embedded /> : <DirectRequest agent={agent} onDone={onChanged} />}
+      {agent.key === "navigateur" ? <BrowserPanel initialGoal={browserGoal ?? ""} embedded /> : agent.key === "directeur" ? <DirecteurPanel onDone={onChanged} /> : <DirectRequest agent={agent} onDone={onChanged} />}
     </Card>
   );
 }

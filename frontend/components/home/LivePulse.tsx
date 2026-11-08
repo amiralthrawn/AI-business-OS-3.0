@@ -11,7 +11,7 @@ function ago(iso: string | null): string {
 
 // The product is alive: what each AI did last, and that they keep going.
 export default function LivePulse({ agents, open }: { agents: AgentsOverview["agents"]; open: number }) {
-  const working = agents.filter((a) => a.configured && ["veilleur", "analyste", "guide"].includes(a.key));
+  const working = agents.filter((a) => a.configured && ["directeur", "veilleur", "analyste", "guide"].includes(a.key));
   if (working.length === 0) return null;
   return (
     <section className="rounded-[20px] border border-border bg-surface p-5 shadow-card">

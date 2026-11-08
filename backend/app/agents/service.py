@@ -106,6 +106,7 @@ def knowledge(session: Session, company_id: uuid.UUID) -> list[dict]:
 # --- which model does each agent use, and requests to change it ---------------
 
 AGENT_LABELS = {
+    "directeur": "Directeur",
     "veilleur": "Veilleur",
     "analyste": "Analyste",
     "guide": "Guide de connexion",
@@ -129,6 +130,11 @@ def routes(agent: str) -> list[dict]:
             {"task": "Chercher sur le web avec sources (prix, salons, concurrents, actualités)", "model": settings.openrouter_model},
             {"task": "Lire une page web que vous indiquez (OEMsTrade, Accuris…)", "model": None},
             {"task": "Comparer avec vos produits, stocks, fournisseurs, clients (Analyste)", "model": None},
+        ]
+    if agent == "directeur":
+        return [
+            {"task": "Passer en revue l'activité, décider des initiatives, formuler les questions", "model": settings.openrouter_agent_model},
+            {"task": "Relancer les agents, rappeler les tâches inachevées, tenir son journal", "model": None},
         ]
     if agent == "navigateur":
         return [
@@ -167,6 +173,10 @@ def model_in_use(agent: str) -> dict:
 
 
 def _model_in_use(agent: str, settings) -> dict:
+    if agent == "directeur":
+        if (settings.openrouter_api_key or "").strip():
+            return {"provider": "OpenRouter", "model": settings.openrouter_agent_model, "kind": "agent", "note": "Le chef d'orchestre : voit toute l'activité, pose les questions, propose des initiatives et relance les agents."}
+        return {"provider": "Règles internes", "model": None, "kind": "rules", "note": "Sans modèle de langage, il pose les questions utiles et relance les agents ; avec une clé OpenRouter il propose aussi des initiatives."}
     if agent == "navigateur":
         from app.browser import manager
 

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.access import policy as access
 from app.access.deps import CurrentUser, get_current_user, require
-from app.agents import followup, perplexity, progress, service, veilleur_agent
+from app.agents import directeur, followup, perplexity, progress, service, veilleur_agent
 from app.browser import manager as browser_manager
 from app.core.entities import AgentProposal, Company
 from app.core.i18n import tx
@@ -15,6 +15,7 @@ from app.database import get_db
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 LABELS = {
+    "directeur": ("Directeur", "Le chef d'orchestre : il voit toute l'activité et tous les agents, vous pose des questions, propose des initiatives et fait en sorte que sans cesse un agent cherche, analyse ou exécute."),
     "veilleur": ("Veilleur", "Cherche en continu sur le web tout ce qui peut compter pour l'entreprise : salons, prix, concurrents, réglementation, votre réputation."),
     "analyste": ("Analyste", "Lit vos chiffres et vos échanges pour repérer risques et opportunités."),
     "executant": ("Exécutant", "Fait réellement le travail dans votre logiciel : complète le catalogue, les fiches fournisseurs et clients, le calendrier, prépare les e-mails (jamais envoyés sans vous)."),
@@ -163,6 +164,16 @@ def _run_in_background(db: Session, company: Company, agent: str) -> bool:
 
     threading.Thread(target=work, daemon=True).start()
     return True
+
+
+@router.post("/directeur/run")
+def run_directeur(db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    return directeur.run_directeur(db, _company(db))
+
+
+@router.get("/directeur/journal")
+def directeur_journal(db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> list[dict]:
+    return list(reversed(directeur.journal(db, _company(db).id)))
 
 
 @router.post("/{agent}/run")

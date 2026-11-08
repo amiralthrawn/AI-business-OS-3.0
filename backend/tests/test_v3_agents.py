@@ -209,7 +209,7 @@ def test_agents_overview_shows_models_runs_and_model_requests(client, monkeypatc
     assert ask.status_code == 200 and ask.json()["status"] == "ok" and ask.json()["found"][0]["title"] == "Electronica Munich"
     overview = client.get("/agents/overview", headers=headers).json()
     agents = {a["key"]: a for a in overview["agents"]}
-    assert set(agents) == {"veilleur", "analyste", "guide", "executant", "navigateur"}
+    assert set(agents) == {"directeur", "veilleur", "analyste", "guide", "executant", "navigateur"}
     assert agents["veilleur"]["model"]["provider"] == "OpenRouter" and agents["analyste"]["model"]["kind"] == "rules"
     assert agents["veilleur"]["recent_runs"][0]["message"].startswith("1 résultat")
     assert overview["settings"]["watch_topics"] == ["Salon Electronica Munich : exposants"]
@@ -605,3 +605,20 @@ def test_zero_revenue_makes_the_analyste_ask_why(client):
     client.post("/agents/questions/refresh", headers=headers)
     titles = [p["title"] for p in client.get("/agents/overview", headers=headers).json()["proposals"] if p["kind"] == "missing_info"]
     assert any("à 0" in t for t in titles)
+
+
+def test_the_directeur_asks_proposes_and_keeps_a_journal(client, monkeypatch):
+    from app.agents import veilleur_agent
+
+    headers = _director(client)
+    first = client.post("/agents/directeur/run", headers=headers).json()
+    assert first["done"]  # rules alone: questions on the missing data and on the goal
+    titles = [p["title"] for p in client.get("/agents/overview", headers=headers).json()["proposals"] if p["kind"] == "missing_info"]
+    assert any("objectif" in t for t in titles)
+    monkeypatch.setattr(veilleur_agent, "enabled", lambda: True)
+    monkeypatch.setattr(perplexity, "chat", lambda system, user, **kw: json.dumps({"message": "Aucune vente connue : je relance la collecte.", "initiatives": [{"title": "Relancer la collecte des factures", "summary": "s", "why": "w", "action": "task", "text": "Relancer"}], "question": None}))
+    second = client.post("/agents/directeur/run", headers=headers).json()
+    assert second["message"].startswith("Aucune vente connue")
+    assert any(p["agent"] == "directeur" and p["title"] == "Relancer la collecte des factures" for p in client.get("/agents/overview", headers=headers).json()["proposals"])
+    log = client.get("/agents/directeur/journal", headers=headers).json()
+    assert len(log) == 2 and log[0]["text"].startswith("Aucune vente")
