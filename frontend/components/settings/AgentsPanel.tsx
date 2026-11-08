@@ -7,6 +7,7 @@ import { type AgentsOverview, agentsCall } from "@/lib/api";
 
 const ACTIONS: { key: string; label: string; hint: string }[] = [
   { key: "calendar_event", label: "Ajouter une date au calendrier", hint: "Salon, fête, échéance, jour férié trouvés par le Veilleur." },
+  { key: "execute", label: "Faire les tâches à ma place (Exécutant)", hint: "L'Exécutant réalise les tâches proposées (catalogue, fiches, calendrier, brouillons d'e-mails) et vous rend compte ; vous pouvez tout annuler. Rien n'est envoyé à l'extérieur." },
   { key: "task", label: "Créer une tâche de suivi", hint: "Par exemple : demander des avis clients si votre note Google est basse." },
 ];
 const STATUS: Record<string, string> = { ok: "À jour", not_configured: "Clé manquante", error: "Erreur" };

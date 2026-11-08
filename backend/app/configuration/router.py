@@ -128,6 +128,24 @@ def request_tool_connection(tool_key: str, db: Session = Depends(get_db), _user:
         raise HTTPException(status_code=404, detail=tx("Cet outil n'est pas dans votre liste.", "This tool is not in your list.")) from exc
 
 
+class ServiceIn(BaseModel):
+    tool_key: str
+
+
+@router.get("/services")
+def services(db: Session = Depends(get_db)) -> list[dict]:
+    return service.services_overview(service.get_configuration(db, _company(db).id))
+
+
+@router.post("/services/{service_key}", status_code=201)
+def connect_service(service_key: str, payload: ServiceIn, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    try:
+        service.connect_service(db, _company(db).id, service_key, payload.tool_key)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=tx("Service ou outil inconnu.", "Unknown service or tool.")) from exc
+    return {"state": service.service_state(service.get_configuration(db, _company(db).id), service_key), "tool": payload.tool_key}
+
+
 class GuideQuestion(BaseModel):
     question: str = Field(min_length=2, max_length=600)
 

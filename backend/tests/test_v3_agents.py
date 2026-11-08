@@ -71,7 +71,7 @@ def test_in_auto_mode_the_agent_acts_and_the_person_can_undo(client, monkeypatch
     monkeypatch.setattr(get_settings(), "perplexity_api_key", "k")
     monkeypatch.setattr(perplexity, "ask", lambda system, user, **kw: (FOUND, []))
     headers = _director(client)
-    assert client.put("/agents/settings", headers=headers, json={"enabled": True, "autonomy": {"calendar_event": "auto"}}).json()["autonomy"] == {"calendar_event": "auto", "task": "ask"}
+    assert client.put("/agents/settings", headers=headers, json={"enabled": True, "autonomy": {"calendar_event": "auto"}}).json()["autonomy"] == {"calendar_event": "auto", "task": "ask", "execute": "ask"}
     client.post("/agents/veilleur/run", headers=headers)
     window = {"start": "2099-11-01T00:00:00Z", "end": "2099-12-01T00:00:00Z"}
     assert len(client.get("/calendar", headers=headers, params=window).json()["events"]) == 1
@@ -209,7 +209,7 @@ def test_agents_overview_shows_models_runs_and_model_requests(client, monkeypatc
     assert ask.status_code == 200 and ask.json()["status"] == "ok" and ask.json()["found"][0]["title"] == "Electronica Munich"
     overview = client.get("/agents/overview", headers=headers).json()
     agents = {a["key"]: a for a in overview["agents"]}
-    assert set(agents) == {"veilleur", "analyste", "guide"}
+    assert set(agents) == {"veilleur", "analyste", "guide", "executant"}
     assert agents["veilleur"]["model"]["provider"] == "OpenRouter" and agents["analyste"]["model"]["kind"] == "rules"
     assert agents["veilleur"]["recent_runs"][0]["message"].startswith("1 résultat")
     assert overview["settings"]["watch_topics"] == ["Salon Electronica Munich : exposants"]
@@ -383,3 +383,56 @@ def test_blocked_site_falls_back_to_a_sourced_web_search(client, monkeypatch):
     monkeypatch.setattr(perplexity, "ask", lambda system, user, **kw: ("NON_TROUVE", []))
     again = client.post("/website/integrate", headers=headers, json={})
     assert again.status_code == 400 and "bloque" in again.json()["detail"]
+
+
+def test_executant_does_the_task_records_it_and_it_can_be_undone(client, monkeypatch):
+    from app.agents import veilleur_agent
+
+    headers = _director(client, "Exec Co", "exec@co.example")
+    monkeypatch.setattr(get_settings(), "openrouter_api_key", "k")
+    script = iter([
+        {"content": "", "tool_calls": [{"id": "1", "function": {"name": "create_supplier", "arguments": '{"name": "Acme Parts", "country": "Allemagne"}'}}]},
+        {"content": "", "tool_calls": [{"id": "2", "function": {"name": "create_product", "arguments": '{"name": "Condensateur 10uF", "sku": "C10"}'}},
+                                       {"id": "3", "function": {"name": "create_calendar_event", "arguments": '{"title": "Electronica", "date": "2026-11-10"}'}},
+                                       {"id": "4", "function": {"name": "draft_email", "arguments": '{"to": "sales@acme.example", "subject": "Prix C10", "body": "Bonjour"}'}}]},
+        {"content": "J'ai créé le fournisseur, le produit, l'événement et un brouillon."},
+    ])
+    monkeypatch.setattr(veilleur_agent, "_chat", lambda messages, tools=None: next(script))
+    res = client.post("/agents/executant/ask", headers=headers, json={"request": "Ajoute Acme Parts et le condensateur C10"}).json()
+    assert res["status"] == "ok" and len(res["done"]) == 4 and "brouillon" in res["message"]
+    assert client.get("/catalog/products", headers=headers).json()
+    overview = client.get("/agents/overview", headers=headers).json()
+    card = next(p for p in overview["proposals"] if p["agent"] == "executant")
+    assert card["status"] == "auto_done"
+    assert client.post(f"/agents/proposals/{card['id']}/undo", headers=headers).json()["status"] == "undone"
+    assert client.get("/catalog/products", headers=headers).json() == []
+    assert any(a["key"] == "executant" for a in overview["agents"])
+
+
+def test_a_task_proposal_can_be_done_by_the_executant(client, monkeypatch):
+    from app.agents import veilleur_agent
+
+    headers = _director(client, "Exec2 Co", "exec2@co.example")
+    monkeypatch.setattr(get_settings(), "openrouter_api_key", "k")
+    monkeypatch.setattr(veilleur_agent, "run", lambda session, company, profile, request, save: save({"title": "Ajouter la référence STM32F4", "summary": "À créer", "why_it_matters": "Suivre la marge", "suggested_action": {"type": "task", "text": "Ajouter STM32F4"}}, ["https://s.example"]) and {"answer": "ok", "found": []})
+    client.post("/agents/veilleur/ask", headers=headers, json={"request": "Cherche des références", "follow": False})
+    proposal = next(p for p in client.get("/agents/overview", headers=headers).json()["proposals"] if p["title"] == "Ajouter la référence STM32F4")
+    script = iter([{"content": "", "tool_calls": [{"id": "1", "function": {"name": "create_product", "arguments": '{"name": "STM32F4", "sku": "STM32F4"}'}}]}, {"content": "Référence ajoutée."}])
+    monkeypatch.setattr(veilleur_agent, "_chat", lambda messages, tools=None: next(script))
+    res = client.post(f"/agents/proposals/{proposal['id']}/execute", headers=headers).json()
+    assert res["status"] == "accepted" and res["done"][0]["kind"] == "product"
+
+
+def test_mail_and_site_control_are_asked_until_done_and_count_in_the_percentage(client):
+    headers = _director(client, "Conn Co", "conn@co.example")
+    before = client.get("/agents/overview", headers=headers).json()["guide"]
+    hrefs = [s["href"] for s in before["steps"]]
+    assert "/?service=mail" in hrefs and "/?service=site_control" in hrefs
+    services = client.get("/configuration/services", headers=headers).json()
+    assert {s["service"] for s in services} == {"mail", "site_control"} and all(s["state"] == "none" for s in services)
+    assert client.post("/configuration/services/mail", headers=headers, json={"tool_key": "wordpress"}).status_code == 404
+    assert client.post("/configuration/services/mail", headers=headers, json={"tool_key": "gmail"}).json()["state"] == "requested"
+    assert client.post("/configuration/services/site_control", headers=headers, json={"tool_key": "shopify"}).status_code == 201
+    after = client.get("/agents/overview", headers=headers).json()["guide"]
+    assert after["percent"] > before["percent"]
+    assert "/?service=mail" not in [s["href"] for s in after["steps"]]

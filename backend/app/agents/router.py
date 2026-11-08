@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.access import policy as access
 from app.access.deps import CurrentUser, get_current_user, require
-from app.agents import perplexity, service
+from app.agents import perplexity, service, veilleur_agent
 from app.core.entities import AgentProposal, Company
 from app.core.i18n import tx
 from app.database import get_db
@@ -16,6 +16,7 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 LABELS = {
     "veilleur": ("Veilleur", "Cherche en continu sur le web tout ce qui peut compter pour l'entreprise : salons, prix, concurrents, réglementation, votre réputation."),
     "analyste": ("Analyste", "Lit vos chiffres et vos échanges pour repérer risques et opportunités."),
+    "executant": ("Exécutant", "Fait réellement le travail dans votre logiciel : complète le catalogue, les fiches fournisseurs et clients, le calendrier, prépare les e-mails (jamais envoyés sans vous)."),
     "guide": ("Guide de connexion", "Cherche pour chaque outil comment en sortir les données, vous guide pas à pas et propose la suite."),
 }
 
@@ -81,7 +82,7 @@ def overview(db: Session = Depends(get_db), user: CurrentUser = Depends(get_curr
     agents = []
     for key, (label, description) in LABELS.items():
         run = service.last_run(db, company.id, key)
-        configured = perplexity.configured() if key in ("veilleur", "guide") else True
+        configured = veilleur_agent.enabled() if key == "executant" else perplexity.configured() if key in ("veilleur", "guide") else True
         agents.append({
             "key": key, "label": label, "description": description, "configured": configured,
             "model": service.model_in_use(key), "memory_count": len(service.memory_items(db, company.id, key)), "recent_runs": service.recent_runs(db, company.id, key),
@@ -162,6 +163,31 @@ def accept(proposal_id: uuid.UUID, db: Session = Depends(get_db), user: CurrentU
     service.execute(db, proposal, automatic=False)
     db.commit()
     return _read(proposal)
+
+
+@router.post("/proposals/{proposal_id}/execute")
+def execute_by_agent(proposal_id: uuid.UUID, db: Session = Depends(get_db), user: CurrentUser = Depends(require(access.ACTION_APPROVE))) -> dict:
+    proposal = _proposal(db, proposal_id)
+    if proposal.status != "new":
+        raise HTTPException(status_code=409, detail=tx("Déjà traité.", "Already handled."))
+    if not veilleur_agent.enabled():
+        raise HTTPException(status_code=400, detail=tx("L'Exécutant a besoin de la clé OpenRouter.", "The executor needs the OpenRouter key."))
+    try:
+        return service.execute_proposal(db, _company(db), proposal, automatic=False)
+    except perplexity.PerplexityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=502, detail=str(exc)[:300]) from exc
+
+
+class ExecutantAskIn(BaseModel):
+    request: str = Field(min_length=3, max_length=3000)
+
+
+@router.post("/executant/ask")
+def ask_executant(payload: ExecutantAskIn, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    if not veilleur_agent.enabled():
+        raise HTTPException(status_code=400, detail=tx("L'Exécutant a besoin de la clé OpenRouter.", "The executor needs the OpenRouter key."))
+    return service.ask_executant(db, _company(db), payload.request.strip())
 
 
 @router.post("/proposals/{proposal_id}/ignore")

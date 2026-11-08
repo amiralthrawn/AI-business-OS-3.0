@@ -214,7 +214,7 @@ TOOLS: list[tuple[str, str, str]] = [
     # Marketing
     ("google_analytics", "Google Analytics", "marketing"), ("google_ads", "Google Ads", "marketing"), ("meta_ads", "Meta Ads (Facebook / Instagram)", "marketing"),
     ("linkedin_ads", "LinkedIn Ads / Sales Navigator", "marketing"), ("mailchimp", "Mailchimp", "marketing"), ("brevo", "Brevo", "marketing"),
-    ("wordpress", "Site WordPress", "marketing"), ("semrush", "Semrush / SEO", "marketing"),
+    ("wordpress", "Site WordPress", "marketing"), ("wix", "Wix", "marketing"), ("webflow", "Webflow", "marketing"), ("squarespace", "Squarespace", "marketing"), ("site_sur_mesure", "Site sur mesure (accès technique)", "marketing"), ("semrush", "Semrush / SEO", "marketing"),
     # Support
     ("zendesk", "Zendesk", "support"), ("freshdesk", "Freshdesk", "support"), ("intercom", "Intercom", "support"), ("crisp", "Crisp", "support"), ("helpscout", "Help Scout", "support"),
     # BI

@@ -119,9 +119,9 @@ def analyste_digest(session: Session, company_id, terms: list[str]) -> str:
 
 # --- the loop -------------------------------------------------------------------
 
-def _chat(messages: list[dict]) -> dict:
+def _chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
     settings = get_settings()
-    body = {"model": settings.openrouter_agent_model, "temperature": 0.2, "messages": messages, "tools": TOOLS}
+    body = {"model": settings.openrouter_agent_model, "temperature": 0.2, "messages": messages, "tools": tools or TOOLS}
     try:
         res = httpx.post(perplexity.OPENROUTER_URL, headers={"Authorization": f"Bearer {settings.openrouter_api_key.strip()}", "Content-Type": "application/json"}, json=body, timeout=120)
     except httpx.HTTPError as exc:

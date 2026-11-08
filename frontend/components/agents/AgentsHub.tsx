@@ -14,6 +14,7 @@ const MODEL_CHOICES: Record<string, string[]> = {
   veilleur: ["Perplexity Sonar Pro", "Perplexity Sonar", "Google Gemini", "Un autre modèle (précisez)"],
   guide: ["Perplexity Sonar Pro", "Perplexity Sonar", "Google Gemini", "Un autre modèle (précisez)"],
   analyste: ["Ajouter un modèle de langage (Claude, GPT…)", "Un autre modèle (précisez)"],
+  executant: ["Un modèle plus puissant pour les tâches complexes", "Un modèle moins cher", "Un autre modèle (précisez)"],
 };
 const fmtNum = (n: number) => new Intl.NumberFormat("fr-FR").format(n);
 const fmtUsd = (n: number) => `${n < 1 ? n.toFixed(n < 0.1 ? 4 : 3) : n.toFixed(2)} $`.replace(".", ",");
@@ -124,7 +125,7 @@ function AgentCard({ agent, requests, usage, catalog, onChanged }: { agent: Agen
 
 function ModelRequestForm({ agent, catalog, onSent }: { agent: Agent; catalog: AgentsUsage["catalog"]; onSent: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
-  const priced = agent.key === "analyste" ? [] : catalog.map((m) => `${m.label} · ${fmtUsd(m.usd_per_m_in)} / ${fmtUsd(m.usd_per_m_out)} par million de tokens (entrée / sortie)${m.usd_per_request ? ` + ${fmtUsd(m.usd_per_request)} par recherche` : ""}`);
+  const priced = agent.key === "analyste" || agent.key === "executant" ? [] : catalog.map((m) => `${m.label} · ${fmtUsd(m.usd_per_m_in)} / ${fmtUsd(m.usd_per_m_out)} par million de tokens (entrée / sortie)${m.usd_per_request ? ` + ${fmtUsd(m.usd_per_request)} par recherche` : ""}`);
   const choices = priced.length ? [...priced, "Un autre modèle (précisez)"] : MODEL_CHOICES[agent.key] ?? ["Un autre modèle (précisez)"];
   const [choice, setChoice] = useState(choices[0]);
   const [detail, setDetail] = useState("");
@@ -208,7 +209,8 @@ function MemoryLine({ agent, onChanged }: { agent: Agent; onChanged: () => Promi
 
 type Found = { title: string; summary: string; why: string; sources: string[] };
 type Used = { model: string; calls: number; tokens: number; usd: number };
-type Panel = { who: string; asked: string; text: string; found: Found[]; sources: string[]; used: Used[]; analysis?: string };
+type Done = { kind: string; label: string };
+type Panel = { who: string; asked: string; text: string; found: Found[]; sources: string[]; used: Used[]; analysis?: string; done?: Done[] };
 
 // Half-page sheet for an agent's answer: closes with the cross, the backdrop or Escape.
 function ResponseSheet({ panel, onClose, children }: { panel: Panel; onClose: () => void; children?: React.ReactNode }) {
@@ -238,6 +240,13 @@ function ResponseSheet({ panel, onClose, children }: { panel: Panel; onClose: ()
             </div>
           ))}
           <Sources urls={panel.sources} />
+          {panel.done && panel.done.length > 0 && (
+            <div className="rounded-xl bg-surface-sunken p-3.5 text-[13px]">
+              <p className="font-semibold text-text">Fait dans votre logiciel</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-text-soft">{panel.done.map((d, i) => <li key={i}>{d.label}</li>)}</ul>
+              <p className="mt-1.5 text-[12px] text-text-faint">Tout est annulable depuis « Ce que l&rsquo;IA a trouvé ou fait pour vous » sur la page Décisions.</p>
+            </div>
+          )}
           {children}
           {panel.used.length > 0 && (
             <p className="border-t border-border pt-2.5 text-[12px] text-text-faint">
@@ -351,6 +360,38 @@ function DirectRequest({ agent, onDone }: { agent: Agent; onDone: () => Promise<
             )}
           </ResponseSheet>
         )}
+      </div>
+    );
+  }
+
+  if (agent.key === "executant") {
+    return (
+      <div>
+        <p className="text-[11.5px] font-bold uppercase tracking-wide text-text-faint">Lui confier une tâche</p>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={3}
+          placeholder="Ex. : Ajoute au catalogue les références STM32F4 et STM32F7, et prépare un e-mail de demande de prix à Acme Parts"
+          className="mt-2 w-full rounded-xl border-[1.5px] border-border-strong bg-surface px-3.5 py-2.5 text-[13.5px] outline-none focus:border-accent"
+        />
+        <Button
+          className="mt-2.5"
+          loading={busy}
+          disabled={busy || !agent.configured || text.trim().length < 3}
+          onClick={() =>
+            void run(async () => {
+              const r = await agentsCall<{ message: string; done: Done[]; used?: Used[] }>("/executant/ask", "POST", { request: text.trim() });
+              return { who: "Exécutant", asked: text.trim(), text: r.message, found: [], sources: [], used: r.used ?? [], done: r.done };
+            })
+          }
+        >
+          Faire exécuter
+        </Button>
+        {!agent.configured && <p className="mt-2 text-[12.5px] text-text-faint">Cet agent attend la clé OpenRouter (OPENROUTER_API_KEY).</p>}
+        {busy && <p className="mt-2 text-[12.5px] text-text-faint">L&rsquo;Exécutant travaille, cela peut prendre une minute…</p>}
+        {error && <p className="mt-2 text-[13px] text-danger">{error}</p>}
+        {panel && <ResponseSheet panel={panel} onClose={() => setPanel(null)} />}
       </div>
     );
   }

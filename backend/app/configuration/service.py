@@ -200,3 +200,57 @@ def request_connection(session: Session, company_id: uuid.UUID, tool_key: str) -
     session.add(context)
     session.commit()
     return state
+
+
+# Two connections the product asks for until they are made: the company's mailbox
+# (to read, prioritise and answer mail) and its website (to be piloted from here).
+SERVICES = {
+    "mail": {
+        "label": "Messagerie de l'entreprise",
+        "why": "L'IA analyse vos e-mails existants, repère ce qui est urgent, prépare les réponses et les relances.",
+        "tools": ["gmail", "outlook", "imap"],
+    },
+    "site_control": {
+        "label": "Pilotage de votre site web",
+        "why": "Le logiciel peut modifier votre site à votre place (titres, textes, produits, prix) après votre accord, au lieu de vous laisser une liste de corrections.",
+        "tools": ["wordpress", "shopify", "woocommerce", "prestashop", "wix", "webflow", "squarespace", "site_sur_mesure"],
+    },
+}
+
+
+def service_state(config: dict, service: str) -> str:
+    """none | requested | connected, from the tools the company declared."""
+
+    states = [(config.get("tools") or {}).get(k) or {} for k in SERVICES[service]["tools"]]
+    if any(s.get("connection") == "connected" for s in states):
+        return "connected"
+    if any(s.get("connection") == "requested" for s in states):
+        return "requested"
+    return "none"
+
+
+def services_overview(config: dict) -> list[dict]:
+    out = []
+    for key, info in SERVICES.items():
+        chosen = next((k for k in info["tools"] if ((config.get("tools") or {}).get(k) or {}).get("connection")), None)
+        out.append({
+            "service": key, "label": info["label"], "why": info["why"], "state": service_state(config, key), "tool": chosen,
+            "choices": [{"key": k, "label": tools.tool_info(k)[0]} for k in info["tools"] if tools.tool_info(k)],
+        })
+    return out
+
+
+def connect_service(session: Session, company_id: uuid.UUID, service: str, tool_key: str) -> dict:
+    """The company picks its provider: the tool is declared and the connection requested."""
+
+    if service not in SERVICES or tool_key not in SERVICES[service]["tools"]:
+        raise KeyError(tool_key)
+    context = BusinessContextService(session).get_or_create(company_id)
+    config = dict(context.configuration or {})
+    configured = dict(config.get("tools") or {})
+    configured.setdefault(tool_key, {})
+    config["tools"] = configured
+    context.configuration = config
+    session.add(context)
+    session.commit()
+    return request_connection(session, company_id, tool_key)

@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.agents import perplexity, veilleur, veilleur_agent
+from app.agents import executant, perplexity, veilleur, veilleur_agent
 from app.business_context.service import BusinessContextService
 from app.configuration import service as config_service
 from app.core.entities import (
@@ -33,7 +33,8 @@ from app.core.entities import (
 )
 
 ACTION_TYPES = ("calendar_event", "task")
-DEFAULT_SETTINGS = {"enabled": True, "autonomy": {"calendar_event": "ask", "task": "ask"}}
+AUTONOMY_KEYS = (*ACTION_TYPES, "execute")  # "execute": the Exécutant does accepted tasks by itself
+DEFAULT_SETTINGS = {"enabled": True, "autonomy": {"calendar_event": "ask", "task": "ask", "execute": "ask"}}
 PARIS = ZoneInfo("Europe/Paris")
 MAX_TOPICS = 12
 
@@ -53,7 +54,7 @@ def aware(value: datetime | None) -> datetime | None:
 def get_settings(session: Session, company_id: uuid.UUID) -> dict:
     config = config_service.get_configuration(session, company_id)
     saved = config.get("agents") or {}
-    autonomy = {**DEFAULT_SETTINGS["autonomy"], **{k: v for k, v in (saved.get("autonomy") or {}).items() if k in ACTION_TYPES and v in ("ask", "auto")}}
+    autonomy = {**DEFAULT_SETTINGS["autonomy"], **{k: v for k, v in (saved.get("autonomy") or {}).items() if k in AUTONOMY_KEYS and v in ("ask", "auto")}}
     return {"enabled": bool(saved.get("enabled", True)), "autonomy": autonomy, "watch_topics": watch_topics(saved)}
 
 
@@ -85,7 +86,7 @@ def save_settings(session: Session, company_id: uuid.UUID, enabled: bool, autono
     config["agents"] = {
         **(config.get("agents") or {}),
         "enabled": enabled,
-        "autonomy": {k: ("auto" if autonomy.get(k) == "auto" else "ask") for k in ACTION_TYPES},
+        "autonomy": {k: ("auto" if autonomy.get(k) == "auto" else "ask") for k in AUTONOMY_KEYS},
     }
     context.configuration = config
     session.commit()
@@ -108,6 +109,7 @@ AGENT_LABELS = {
     "veilleur": "Veilleur",
     "analyste": "Analyste",
     "guide": "Guide de connexion",
+    "executant": "Exécutant",
 }
 
 
@@ -126,6 +128,12 @@ def routes(agent: str) -> list[dict]:
             {"task": "Chercher sur le web avec sources (prix, salons, concurrents, actualités)", "model": settings.openrouter_model},
             {"task": "Lire une page web que vous indiquez (OEMsTrade, Accuris…)", "model": None},
             {"task": "Comparer avec vos produits, stocks, fournisseurs, clients (Analyste)", "model": None},
+        ]
+    if agent == "executant":
+        return [
+            {"task": "Comprendre la tâche, choisir et enchaîner les actions, rendre compte", "model": settings.openrouter_agent_model},
+            {"task": "Créer produits, fournisseurs, clients, événements, tâches, brouillons d'e-mails", "model": None},
+            {"task": "Chercher un fait externe ou lire une page", "model": settings.openrouter_model},
         ]
     if agent == "guide":
         return [
@@ -152,6 +160,10 @@ def model_in_use(agent: str) -> dict:
 
 
 def _model_in_use(agent: str, settings) -> dict:
+    if agent == "executant":
+        if (settings.openrouter_api_key or "").strip():
+            return {"provider": "OpenRouter", "model": settings.openrouter_agent_model, "kind": "agent", "note": "IA générative avec outils : fait réellement les tâches dans votre logiciel (catalogue, fiches, calendrier, brouillons d'e-mails). N'envoie rien à l'extérieur."}
+        return {"provider": None, "model": None, "kind": "agent", "note": "Aucune clé OpenRouter renseignée : cet agent ne peut pas travailler."}
     if agent == "analyste":
         if (settings.openrouter_api_key or "").strip():
             return {"provider": "Calculs internes + OpenRouter", "model": settings.openrouter_agent_model, "kind": "rules", "note": "Règles et statistiques sur vos chiffres (sans IA) ; un modèle de langage lit votre site web."}
@@ -561,7 +573,14 @@ def _ingest(session: Session, company: Company, item: dict, sources: list[str], 
             why=f"Nécessaire pour traiter : {title}", action_type="none", status="new",
             dedupe_key=hashlib.sha1(f"need|{needs.lower()}".encode()).hexdigest(),
         ))
-    if action != "none" and get_settings(session, company.id)["autonomy"].get(action) == "auto":
+    autonomy = get_settings(session, company.id)["autonomy"]
+    if action == "task" and autonomy.get("execute") == "auto" and veilleur_agent.enabled():
+        try:
+            execute_proposal(session, company, proposal, automatic=True)
+        except perplexity.PerplexityError:
+            session.rollback()
+            session.add(proposal)
+    elif action != "none" and autonomy.get(action) == "auto":
         execute(session, proposal, automatic=True)
     session.flush()
     return True
@@ -595,8 +614,53 @@ def execute(session: Session, proposal: AgentProposal, *, automatic: bool) -> No
     proposal.decided_at = now()
 
 
+def execute_proposal(session: Session, company: Company, proposal: AgentProposal, *, automatic: bool) -> dict:
+    """The Exécutant does the proposed task for real."""
+
+    config = config_service.get_configuration(session, company.id)
+    profile = veilleur.profile_text(company.name, company.website_url, config_service.ai_profile(config), knowledge(session, company.id))
+    task = f"{proposal.title}\n{proposal.summary or ''}\n{(proposal.action_payload or {}).get('text', '')}\nPourquoi c'est utile : {proposal.why or ''}".strip()
+    perplexity.drain_usage()
+    out = executant.run(session, company, task, profile)
+    proposal.result_ref = {"executant": out["done"]}
+    proposal.answer = out["answer"][:4000]
+    proposal.status = "auto_done" if automatic else "accepted"
+    proposal.decided_at = now()
+    session.commit()
+    used = used_summary(perplexity.peek_usage())
+    log_run(session, company.id, "executant", "ok", f"{proposal.title[:150]} ({len(out['done'])} action(s))", len(out["done"]))
+    remember(session, company.id, "executant", proposal.title, out["answer"], [d["label"] for d in out["done"]])
+    return {"answer": out["answer"], "done": out["done"], "used": used, "status": proposal.status}
+
+
+def ask_executant(session: Session, company: Company, request: str) -> dict:
+    """A direct order to the Exécutant. Recorded as a decision card with its undo."""
+
+    config = config_service.get_configuration(session, company.id)
+    profile = veilleur.profile_text(company.name, company.website_url, config_service.ai_profile(config), knowledge(session, company.id))
+    past = recall(session, company.id, "executant")
+    if past:
+        profile += f"\n\nMémoire de tes tâches précédentes :\n{past}"
+    perplexity.drain_usage()
+    try:
+        out = executant.run(session, company, request, profile)
+    except perplexity.PerplexityError as exc:
+        session.rollback()
+        log_run(session, company.id, "executant", "error", f"{request[:120]} : {str(exc)[:200]}")
+        return {"status": "error", "message": str(exc)[:300], "done": [], "used": []}
+    key = hashlib.sha1(f"exec|{request}|{now().isoformat()}".encode()).hexdigest()
+    session.add(AgentProposal(company_id=company.id, agent="executant", kind="finding", category="fait", title=request[:240], summary=out["answer"][:1500], action_type="none", status="auto_done", result_ref={"executant": out["done"]}, answer=out["answer"][:4000], dedupe_key=key, decided_at=now()))
+    session.commit()
+    used = used_summary(perplexity.peek_usage())
+    log_run(session, company.id, "executant", "ok", f"{request[:150]} ({len(out['done'])} action(s))", len(out["done"]))
+    remember(session, company.id, "executant", request, out["answer"], [d["label"] for d in out["done"]])
+    return {"status": "ok", "message": out["answer"] or "Terminé.", "done": out["done"], "used": used}
+
+
 def undo(session: Session, proposal: AgentProposal) -> None:
     ref = proposal.result_ref or {}
+    if ref.get("executant"):
+        executant.undo(session, ref["executant"])
     if ref.get("calendar_event"):
         event = session.get(CalendarEvent, uuid.UUID(ref["calendar_event"]))
         if event is not None:
@@ -646,7 +710,8 @@ def guide(session: Session, company: Company) -> dict:
         (15, count(Transaction) > 0, "Déposer vos ventes et vos achats (ou votre FEC)", "C'est ce qui permet à l'IA de détecter risques et opportunités avec vos vrais chiffres.", "/settings"),
         (5, "fec" in imports, "Déposer votre comptabilité (FEC)", "Donne une vue exacte de votre chiffre d'affaires et de vos charges.", "/settings"),
         (10, session.query(UserProfile).count() > 1, "Inviter votre équipe", "Chacun voit ce qui le concerne et peut valider ses décisions.", "/people"),
-        (5, messaging or count(Communication) > 0, "Relier vos e-mails et votre messagerie", "L'IA pourra analyser et prioriser vos échanges.", "/settings"),
+        (10, config_service.service_state(config, "mail") != "none" or messaging, "Relier la messagerie de l'entreprise", "L'IA analyse vos e-mails existants, repère l'urgent, prépare réponses et relances. Le Guide de connexion vous accompagne pas à pas.", "/?service=mail"),
+        (10, config_service.service_state(config, "site_control") != "none" or bool(site.get("request")), "Donner au logiciel le pilotage de votre site web", "Le logiciel applique lui-même les améliorations de votre site (après votre accord). Le Guide de connexion vous explique comment lui donner l'accès.", "/?service=site_control"),
         (10, bool(company.website_url) or bool(site.get("request")), "Ajouter le site web de l'entreprise (ou nous demander d'en créer un)", "L'Analyste lit votre site en profondeur pour comprendre votre métier et partage ce qu'il comprend avec les autres agents.", "/communications?tab=website"),
         (5, bool(site.get("analysis")) or not company.website_url, "Faire analyser votre site web", "Sans analyse, aucune amélioration ni synchronisation ne peut vous être proposée.", "/communications?tab=website"),
         (10, perplexity.configured(), "Activer le Veilleur (clé de recherche web)", "Sans elle, aucune recherche externe : salons, prix, concurrents, avis Google.", "/settings#agents"),

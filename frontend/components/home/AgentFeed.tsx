@@ -7,7 +7,7 @@ import Card from "@/components/ui/Card";
 import { type AgentProposal, agentsCall } from "@/lib/api";
 
 const ACTION_LABEL: Record<string, string> = { calendar_event: "Ajouter au calendrier", task: "Créer la tâche" };
-const AUTO_LABEL: Record<string, string> = { calendar_event: "Ajouté au calendrier", task: "Tâche créée" };
+const AUTO_LABEL: Record<string, string> = { calendar_event: "Ajouté au calendrier", task: "Tâche créée", none: "Fait" };
 
 function host(url: string) {
   try {
@@ -72,6 +72,7 @@ export default function AgentFeed({ proposals }: { proposals: AgentProposal[] })
                 <span className="text-[12px] text-text-faint">{AUTO_LABEL[p.action_type] ?? "Fait"}</span>
               </div>
               <p className="mt-2 text-[14.5px] font-semibold text-text">{p.title}</p>
+              {(p.answer || p.summary) && p.agent === "executant" && <p className="mt-1.5 whitespace-pre-wrap text-[13px] text-text-soft">{p.answer ?? p.summary}</p>}
               <div className="mt-3"><Button variant="ghost" loading={busy === p.id} onClick={() => call(p, "undo", "undone")}>Annuler</Button></div>
             </Card>
           );
@@ -79,7 +80,7 @@ export default function AgentFeed({ proposals }: { proposals: AgentProposal[] })
         return (
           <Card key={p.id} className="p-6">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge label="Trouvé par le Veilleur" tone="accent" />
+              <Badge label={p.agent === "analyste" ? "Proposé par l'Analyste" : "Trouvé par le Veilleur"} tone="accent" />
               {p.category && <span className="text-[11px] font-bold uppercase tracking-wide text-accent-strong">{p.category}</span>}
               {p.event_date && <span className="ml-auto text-[13px] font-semibold text-text">{new Date(p.event_date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}</span>}
             </div>
@@ -89,7 +90,8 @@ export default function AgentFeed({ proposals }: { proposals: AgentProposal[] })
               <p className="mt-2 text-[13.5px] text-text"><span className="font-semibold text-accent-strong">L&rsquo;IA propose : </span>{p.action_text}</p>
             )}
             <div className="mt-4 flex flex-wrap gap-2.5">
-              {p.action_type !== "none" && <Button loading={busy === p.id} onClick={() => call(p, "accept", "accepted")}>Valider · {ACTION_LABEL[p.action_type]}</Button>}
+              {p.action_type === "task" && <Button loading={busy === p.id} onClick={() => call(p, "execute", "accepted")}>Le faire seul (Exécutant)</Button>}
+              {p.action_type !== "none" && <Button variant={p.action_type === "task" ? "ghost" : "primary"} disabled={busy === p.id} onClick={() => call(p, "accept", "accepted")}>Valider · {ACTION_LABEL[p.action_type]}</Button>}
               <Button variant="ghost" onClick={() => call(p, "ignore", "ignored")}>Ignorer</Button>
             </div>
             {(p.why || p.sources.length > 0) && (

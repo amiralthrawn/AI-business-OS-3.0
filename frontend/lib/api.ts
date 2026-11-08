@@ -544,6 +544,10 @@ export const discardLead = (leadId: string) => sendJSON<SourcingLeadView>("POST"
 // Website intelligence
 export const getWebsite = () => getJSON<WebsiteState>("/website", "Analyse du site indisponible");
 export const setWebsiteUrl = (url: string | null) => sendJSON<{ website_url: string | null }>("PATCH", "/website/site", { website_url: url }, "Enregistrement impossible");
+export type ManagedService = { service: string; label: string; why: string; state: "none" | "requested" | "connected"; tool: string | null; choices: { key: string; label: string }[] };
+export const getManagedServices = () => configJson<ManagedService[]>("services");
+export const connectManagedService = (service: string, toolKey: string) =>
+  configJson<{ state: string; tool: string }>(`services/${encodeURIComponent(service)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tool_key: toolKey }) });
 export const integrateWebsite = (url?: string | null) => sendJSON<{ pages: number; created: number; indirect?: boolean }>("POST", "/website/integrate", { website_url: url ?? null }, "Analyse du site impossible");
 export const requestWebsiteCreation = (notes: string | null) => sendJSON<{ status: string }>("POST", "/website/creation-request", { notes }, "Demande impossible");
 export const runWebsiteAudit = () => sendJSON<AIRunView & { proposals: WebsiteProposal[] }>("POST", "/website/audit", undefined, "Analyse impossible");

@@ -3,6 +3,7 @@ import OnboardingGate from "@/components/home/OnboardingGate";
 import BriefingCard from "@/components/home/BriefingCard";
 import AgentFeed from "@/components/home/AgentFeed";
 import SiteIntegration from "@/components/communications/SiteIntegration";
+import ServiceConnections from "@/components/configuration/ServiceConnections";
 import GuideCard from "@/components/home/GuideCard";
 import DecisionFeed from "@/components/home/DecisionFeed";
 import HomeAskAI from "@/components/home/HomeAskAI";
@@ -74,6 +75,7 @@ export default async function CommandCenterPage() {
           </section>
 
           {agents?.guide?.steps.some((st) => st.href === "/communications?tab=website") && <SiteIntegration websiteUrl={null} compact />}
+          {agents?.guide?.steps.some((st) => st.href.startsWith("/?service=")) && <ServiceConnections />}
           {agents?.guide && <GuideCard guide={agents.guide} />}
 
           {home.briefing && <BriefingCard briefing={home.briefing} viewer={home.viewer} />}
