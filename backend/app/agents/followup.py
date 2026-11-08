@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.agents import perplexity, veilleur_agent
 from app.business_context.service import BusinessContextService
 from app.configuration import service as config_service
-from app.core.entities import AgentProposal, Company
+from app.core.entities import AgentProposal, Company, Transaction
 
 MAX_ACTIVITY = 40
 MAX_OPEN_QUESTIONS = 3
@@ -143,6 +143,9 @@ def gaps(session: Session, company: Company) -> list[tuple[str, str, str, str]]:
 
     config = config_service.get_configuration(session, company.id)
     out: list[tuple[str, str, str, str]] = []
+    if session.query(Transaction).count() == 0:
+        out.append(("analyste", "zero:revenue", "Votre chiffre d'affaires et vos coûts sont à 0 : pourquoi ? Vos factures ou votre comptabilité ne sont pas encore dans le logiciel, ou un outil n'est pas relié ?",
+                    "Je ne vois aucune vente ni aucun achat. Dites-moi ce qui manque (document, logiciel de facturation, banque) et je vous propose la façon la plus simple de l'intégrer."))
     known = " ".join(str(k.get("answer", "")) for k in config.get("agent_knowledge") or [])
     for key, state in (config.get("tools") or {}).items():
         info = config_tools.tool_info(key)

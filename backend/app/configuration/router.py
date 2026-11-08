@@ -1,5 +1,6 @@
 import hashlib
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -116,7 +117,7 @@ async def import_auto(
         kind = imports.detect_kind(file.filename or "", content)
     except imports.ImportError_ as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return await _run_import(db, company, kind, file.filename or "", content, tool, event_bus)
+    return await run_in_threadpool(_run_import, db, company, kind, file.filename or "", content, tool, event_bus)
 
 
 @router.post("/tools/{tool_key}/request-connection")
@@ -194,7 +195,7 @@ async def import_file(
         raise HTTPException(status_code=404, detail=tx("Type d'import inconnu", "Unknown import type"))
     company = _company(db)
     content = await file.read(imports.MAX_BYTES + 1)
-    return await _run_import(db, company, kind, file.filename or "", content, tool, event_bus)
+    return await run_in_threadpool(_run_import, db, company, kind, file.filename or "", content, tool, event_bus)
 
 
 def _sweep_in_background(bind, company_id, event_bus: EventBus) -> None:
@@ -208,17 +209,27 @@ def _sweep_in_background(bind, company_id, event_bus: EventBus) -> None:
         session = sessionmaker(bind=bind, autoflush=False, expire_on_commit=False)()
         try:
             scope_session(session, company_id)
-            run_monitoring_sweep(session, event_bus)
+            from app.agents import progress
+
+            progress.start(company_id, "analyste", "Vérification de vos données importées")
+            try:
+                run_monitoring_sweep(session, event_bus, lambda text, pct: progress.step(company_id, "analyste", text, pct))
+                progress.finish(company_id, "analyste", "done", "Vérification terminée : vos risques et opportunités sont à jour.")
+            except progress.Cancelled:
+                progress.finish(company_id, "analyste", "cancelled", "Vérification arrêtée.")
             session.commit()
         except Exception:
             session.rollback()
+            from app.agents import progress
+
+            progress.finish(company_id, "analyste", "error", "La vérification des données s'est interrompue.")
         finally:
             session.close()
 
     threading.Thread(target=work, daemon=True).start()
 
 
-async def _run_import(db: Session, company: Company, kind: str, filename: str, content: bytes, tool: str | None, event_bus: EventBus) -> dict:
+def _run_import(db: Session, company: Company, kind: str, filename: str, content: bytes, tool: str | None, event_bus: EventBus) -> dict:
     sha = hashlib.sha256(content).hexdigest()
     for earlier in service.get_configuration(db, company.id).get("imports") or []:
         if earlier.get("sha") == sha:

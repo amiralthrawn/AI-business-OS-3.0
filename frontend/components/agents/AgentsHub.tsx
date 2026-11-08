@@ -320,8 +320,9 @@ function DirectRequest({ agent, onDone }: { agent: Agent; onDone: () => Promise<
           loading={busy}
           onClick={() =>
             void run(async () => {
-              const r = await agentsCall<{ message: string; summary?: string }>("/analyste/run");
+              const r = await agentsCall<{ message: string; summary?: string; started?: boolean }>("/analyste/run");
               const summary = r.summary ?? r.message;
+              if (r.started !== undefined && !r.summary) return { who: "Analyste", asked: "Analyse de vos données", text: summary, found: [], sources: [], used: [] };
               setRelay("Cherche sur le web et dans les sites utiles ce qui peut m'aider à traiter ces points.");
               return { who: "Analyste", asked: "Analyse de vos données", text: summary, found: [], sources: [], used: [], analysis: summary };
             })

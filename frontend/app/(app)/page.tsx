@@ -5,6 +5,7 @@ import AgentFeed from "@/components/home/AgentFeed";
 import SiteIntegration from "@/components/communications/SiteIntegration";
 import ServiceConnections from "@/components/configuration/ServiceConnections";
 import ActivityPanel from "@/components/home/ActivityPanel";
+import LivePulse from "@/components/home/LivePulse";
 import BrowserNotice from "@/components/home/BrowserNotice";
 import GuideCard from "@/components/home/GuideCard";
 import DecisionFeed from "@/components/home/DecisionFeed";
@@ -86,6 +87,7 @@ export default async function CommandCenterPage({ searchParams }: { searchParams
 
           {home.briefing && <BriefingCard briefing={home.briefing} viewer={home.viewer} />}
 
+          {agents && agents.agents.length > 0 && <LivePulse agents={agents.agents} open={agents.proposals.filter((p) => p.kind === "missing_info").length} />}
           {agents && agents.agents.length > 0 && <ActivityPanel />}
 
           {agents && <AgentFeed proposals={agents.proposals} />}

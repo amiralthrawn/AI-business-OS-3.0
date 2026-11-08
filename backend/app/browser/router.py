@@ -1,5 +1,6 @@
 import uuid
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -118,4 +119,4 @@ async def import_download(
         kind = imports.detect_kind(item["name"], item["content"])
     except imports.ImportError_ as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return await _run_import(db, company, kind, item["name"], item["content"], None, event_bus)
+    return await run_in_threadpool(_run_import, db, company, kind, item["name"], item["content"], None, event_bus)

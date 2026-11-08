@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.access import policy as access
 from app.access.deps import CurrentUser, get_current_user, require
-from app.agents import followup, perplexity, service, veilleur_agent
+from app.agents import followup, perplexity, progress, service, veilleur_agent
 from app.browser import manager as browser_manager
 from app.core.entities import AgentProposal, Company
 from app.core.i18n import tx
@@ -134,20 +134,62 @@ def ask_veilleur(payload: VeilleurAskIn, db: Session = Depends(get_db), _user: C
     return service.ask_veilleur(db, _company(db), payload.request.strip(), payload.follow, payload.context, payload.with_analysis)
 
 
+def _run_in_background(db: Session, company: Company, agent: str) -> bool:
+    """Long work goes on in the server: the request answers at once and the progress is polled.
+    (SQLite -- dev and tests -- stays synchronous.)"""
+
+    import threading
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.core.tenant_scope import scope_session
+
+    if db.get_bind().dialect.name == "sqlite":
+        return False
+    bind, company_id = db.get_bind(), company.id
+    label = "Analyse des données" if agent == "analyste" else "Préparation de la veille"
+    progress.start(company_id, agent, label)
+
+    def work() -> None:
+        session = sessionmaker(bind=bind, autoflush=False, expire_on_commit=False)()
+        try:
+            scope_session(session, company_id)
+            comp = session.query(Company).first()
+            (service.run_analyste if agent == "analyste" else service.run_veilleur)(session, comp)
+        except Exception:
+            session.rollback()
+        finally:
+            session.close()
+
+    threading.Thread(target=work, daemon=True).start()
+    return True
+
+
 @router.post("/{agent}/run")
 def run_agent(agent: str, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
     company = _company(db)
-    if agent == "veilleur":
-        run = service.run_veilleur(db, company)
-    elif agent == "analyste":
-        run = service.run_analyste(db, company)
-    else:
+    if agent not in ("veilleur", "analyste"):
         raise HTTPException(status_code=404, detail=tx("Agent inconnu", "Unknown agent"))
+    if progress.running(company.id, agent) and db.get_bind().dialect.name != "sqlite":
+        return {"status": "running", "found": 0, "message": "Déjà en cours : suivez l'avancement dans la pastille.", "started": False}
+    if _run_in_background(db, company, agent):
+        return {"status": "running", "found": 0, "message": "Lancé : l'avancement s'affiche en direct, vous pouvez changer de page.", "started": True}
+    run = service.run_veilleur(db, company) if agent == "veilleur" else service.run_analyste(db, company)
     extra = {}
     if agent == "analyste":
         last = service.last_analysis(db, company.id) or {}
         extra = {"summary": last.get("summary"), "changed": last.get("changed", True)}
     return {"status": run.status, "found": run.found, "message": run.message, **extra}
+
+
+@router.get("/progress")
+def get_progress(db: Session = Depends(get_db), _user: CurrentUser = Depends(get_current_user)) -> list[dict]:
+    return progress.snapshot(_company(db).id)
+
+
+@router.post("/progress/{agent}/cancel")
+def cancel_progress(agent: str, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    return {"cancelled": progress.cancel(_company(db).id, agent)}
 
 
 @router.delete("/memory/{agent}", status_code=204)

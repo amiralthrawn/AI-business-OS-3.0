@@ -582,3 +582,26 @@ def test_the_guide_asks_questions_and_deduces_tasks_from_the_answer(client, monk
     assert any(p["title"] == "Qui est votre comptable ?" for p in overview["proposals"])
     guide = overview["guide"]
     assert any(s["import_kind"] == "fec" for s in guide["steps"]) or any(s["import_kind"] for s in guide["steps"])
+
+
+def test_the_analysis_reports_where_it_is_and_can_be_stopped(client, db_session):
+    from app.agents import progress
+    from app.core.entities import Company
+
+    headers = _director(client)
+    client.post("/agents/analyste/run", headers=headers)
+    jobs = client.get("/agents/progress", headers=headers).json()
+    assert jobs[0]["agent"] == "analyste" and jobs[0]["status"] == "done" and jobs[0]["percent"] == 100
+    assert len(jobs[0]["steps"]) >= 3  # it said what it was doing along the way
+    company = db_session.query(Company).first()
+    progress.start(company.id, "analyste", "Analyse des données")
+    assert client.post("/agents/progress/analyste/cancel", headers=headers).json() == {"cancelled": True}
+    with pytest.raises(progress.Cancelled):
+        progress.step(company.id, "analyste", "encore", 10)
+
+
+def test_zero_revenue_makes_the_analyste_ask_why(client):
+    headers = _director(client)
+    client.post("/agents/questions/refresh", headers=headers)
+    titles = [p["title"] for p in client.get("/agents/overview", headers=headers).json()["proposals"] if p["kind"] == "missing_info"]
+    assert any("à 0" in t for t in titles)

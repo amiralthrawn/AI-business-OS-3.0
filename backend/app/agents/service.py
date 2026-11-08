@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.agents import executant, followup, perplexity, veilleur, veilleur_agent
+from app.agents import executant, followup, perplexity, progress, veilleur, veilleur_agent
 from app.business_context.service import BusinessContextService
 from app.configuration import service as config_service
 from app.core.entities import (
@@ -443,6 +443,22 @@ def is_due(session: Session, company_id: uuid.UUID, agent: str, hours: int) -> b
 
 
 def run_veilleur(session: Session, company: Company) -> AgentRun:
+    progress.start(company.id, "veilleur", "Préparation de la veille")
+    try:
+        run = _run_veilleur(session, company)
+    except progress.Cancelled:
+        session.rollback()
+        progress.finish(company.id, "veilleur", "cancelled", "Veille arrêtée.")
+        raise
+    except Exception:
+        session.rollback()
+        progress.finish(company.id, "veilleur", "error", "La veille s'est interrompue.")
+        raise
+    progress.finish(company.id, "veilleur", "done" if run.status == "ok" else "error", f"Veille terminée : {run.message}"[:200])
+    return run
+
+
+def _run_veilleur(session: Session, company: Company) -> AgentRun:
     run = AgentRun(company_id=company.id, agent="veilleur", status="ok", found=0)
     session.add(run)
     if not perplexity.configured():
@@ -452,6 +468,8 @@ def run_veilleur(session: Session, company: Company) -> AgentRun:
         return run
     config = config_service.get_configuration(session, company.id)
     profile = veilleur.profile_text(company.name, company.website_url, config_service.ai_profile(config), knowledge(session, company.id))
+    topics = get_settings(session, company.id)["watch_topics"]
+    progress.step(company.id, "veilleur", "Recherche sur le web : salons, prix, concurrents, réglementation" + (f", et vos {len(topics)} sujet(s) suivis" if topics else ""), 15)
     try:
         results = veilleur.scan(profile, company.name, date.today(), get_settings(session, company.id)["watch_topics"])
     except perplexity.PerplexityError as exc:
@@ -460,7 +478,8 @@ def run_veilleur(session: Session, company: Company) -> AgentRun:
         session.commit()
         return run
     created = 0
-    for item, sources in results:
+    for n, (item, sources) in enumerate(results, start=1):
+        progress.step(company.id, "veilleur", f"Vérification et enregistrement des résultats ({n} sur {len(results)})", 50 + int(45 * n / max(1, len(results))))
         created += 1 if _ingest(session, company, item, sources) else 0
     run.found = created
     run.message = f"{created} nouvelle(s) information(s)" if created else "Rien de nouveau"
@@ -523,10 +542,29 @@ def run_analyste(session: Session, company: Company) -> AgentRun:
     from app.core.events.tenant import TenantEventBus
     from app.intelligence.monitoring import run_monitoring_sweep
 
+    if not progress.running(company.id, "analyste"):
+        progress.start(company.id, "analyste", "Analyse des données")
+    try:
+        return _run_analyste(session, company, event_bus, TenantEventBus, run_monitoring_sweep)
+    except progress.Cancelled:
+        session.rollback()
+        progress.finish(company.id, "analyste", "cancelled", "Analyse arrêtée : vous pourrez la relancer quand vous voulez.")
+        raise
+    except Exception:
+        session.rollback()
+        progress.finish(company.id, "analyste", "error", "L'analyse s'est interrompue. Relancez-la.")
+        raise
+
+
+def _run_analyste(session, company, event_bus, TenantEventBus, run_monitoring_sweep) -> AgentRun:
+    cid = company.id
+    say = lambda text, percent=None: progress.step(cid, "analyste", text, percent)
+    say("Lecture de votre dernière situation", 2)
     previous = last_analysis(session, company.id)
     run = AgentRun(company_id=company.id, agent="analyste", status="ok", found=0)
     session.add(run)
-    result = run_monitoring_sweep(session, TenantEventBus(event_bus, company.id))
+    result = run_monitoring_sweep(session, TenantEventBus(event_bus, company.id), lambda text, pct: say(text, 5 + int(pct * 0.75)))
+    say("Rédaction du résumé de ce qui a changé", 85)
     run.found = result["risks_created"] + result["opportunities_created"]
     after = _situation(session, company.id)
     changed, summary = analyste_summary(previous["situation"] if previous else None, after, previous["at"] if previous else None)
@@ -540,12 +578,15 @@ def run_analyste(session: Session, company: Company) -> AgentRun:
     context.configuration = config
     session.commit()
     remember(session, company.id, "analyste", "Analyse de vos données", summary)
+    say("Relecture de votre site web", 90)
     _refresh_site(session, company)
+    say("Recherche de tâches à vous proposer et de questions à vous poser", 95)
     try:
         suggest_browser_tasks(session, company)
         followup.ask_questions(session, company)
     except Exception:
         session.rollback()
+    progress.finish(cid, "analyste", "done", f"Analyse terminée : {summary[:160]}")
     return run
 
 

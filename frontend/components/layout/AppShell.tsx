@@ -1,5 +1,6 @@
 "use client";
 
+import AIProgressDock from "@/components/layout/AIProgressDock";
 import { useState } from "react";
 import MobileTabBar from "@/components/layout/MobileTabBar";
 import Sidebar from "@/components/layout/Sidebar";
@@ -42,6 +43,7 @@ export default function AppShell({
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar companyName={companyName} pendingCount={pendingCount} me={me} users={users} onMenuClick={() => setMobileOpen(true)} />
           <div className="min-w-0 flex-1 overflow-y-auto pb-[calc(70px+env(safe-area-inset-bottom))] md:pb-0">{children}</div>
+          <AIProgressDock />
         </div>
       </div>
       <MobileTabBar permissions={me?.permissions ?? null} />
