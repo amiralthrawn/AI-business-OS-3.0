@@ -63,7 +63,7 @@ ACTIVE = ("starting", "running", "human", "needs_human")
 
 def provider() -> str | None:
     s = get_settings()
-    if (s.browserbase_api_key or "").strip() and (s.browserbase_project_id or "").strip():
+    if (s.browserbase_api_key or "").strip():
         return "cloud"
     if s.browser_local:
         return "local"
@@ -97,7 +97,8 @@ def get(company_id: uuid.UUID, task_id: str) -> Task | None:
 def _open_cloud(task: Task):
     s = get_settings()
     headers = {"x-bb-api-key": s.browserbase_api_key.strip(), "Content-Type": "application/json"}
-    body = {"projectId": s.browserbase_project_id.strip(), "browserSettings": {"viewport": VIEW}, "timeout": MAX_SECONDS + 120}
+    project = (s.browserbase_project_id or "").strip()
+    body = {**({"projectId": project} if project else {}), "browserSettings": {"viewport": VIEW}, "timeout": MAX_SECONDS + 120}
     res = httpx.post(f"{BB}/sessions", headers=headers, json=body, timeout=30)
     if res.status_code >= 300:
         raise RuntimeError(f"Navigateur cloud indisponible ({res.status_code}) : {res.text[:200]}")
@@ -110,7 +111,7 @@ def _open_cloud(task: Task):
 
     def release() -> None:
         try:
-            httpx.post(f"{BB}/sessions/{data['id']}", headers=headers, json={"projectId": body["projectId"], "status": "REQUEST_RELEASE"}, timeout=15)
+            httpx.post(f"{BB}/sessions/{data['id']}", headers=headers, json={**({"projectId": body["projectId"]} if "projectId" in body else {}), "status": "REQUEST_RELEASE"}, timeout=15)
         except httpx.HTTPError:
             pass
 
