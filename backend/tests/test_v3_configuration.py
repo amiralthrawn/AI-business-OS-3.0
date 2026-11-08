@@ -415,3 +415,22 @@ def test_real_xls_files_import(client):
         assert res.status_code == 200, res.text
         kinds[res.json()["kind"]] = res.json()
     assert kinds["stock"]["created"] > 7000 and kinds["prospects"]["created"] > 1900
+
+
+def test_connection_guide_for_mail_uses_the_stronger_model_and_falls_back_honestly(client, monkeypatch):
+    from app.agents import perplexity
+
+    monkeypatch.setattr(get_settings(), "openrouter_api_key", "k")
+    asked = {}
+    def fake_ask(system, user, **kw):
+        asked.update(system=system, user=user, model=kw.get("model"))
+        return ("NON_TROUVE", [])
+    monkeypatch.setattr(perplexity, "ask", fake_ask)
+    monkeypatch.setattr(perplexity, "chat", lambda system, user, **kw: "1. Autoriser : Connectez-vous avec le compte.\n2. Accepter : Donnez l'accès en lecture.\nÀ savoir : administrateur requis.")
+    headers = _director(client)
+    _with_tools(client, headers, ["gmail", "outlook"])
+    guide = client.get("/configuration/tools/gmail/guide", headers=headers).json()
+    assert "autoriser" in asked["user"].lower() and "exporter" not in asked["user"].lower() and asked["model"] == "perplexity/sonar-pro"
+    assert guide["status"] == "general" and guide["sources"] == [] and "non sourcées" in guide["caveats"] and len(guide["steps"]) == 2
+    plan = client.get("/configuration/integration-plan", headers=headers).json()
+    assert next(t for t in plan["tools"] if t["key"] == "outlook")["connection_only"] is True

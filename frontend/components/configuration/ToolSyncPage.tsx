@@ -137,10 +137,10 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
           </div>
 
           <div className="mt-7 rounded-2xl border border-border p-4 sm:mt-9 sm:p-6">
-            <p className="text-[12px] font-bold uppercase tracking-wide text-accent-strong">Récupérer vos données</p>
-            <p className="mt-2 text-[14px] font-semibold text-text">1. Exportez-les depuis {label}.</p>
+            <p className="text-[12px] font-bold uppercase tracking-wide text-accent-strong">{item.connection_only ? "Connecter" : "Récupérer vos données"}</p>
+            <p className="mt-2 text-[14px] font-semibold text-text">{item.connection_only ? `1. Autorisez la connexion à ${label}.` : `1. Exportez-les depuis ${label}.`}</p>
             {guideLoading && <p className="mt-2 text-[13px] text-text-faint">Je cherche la procédure de {label} dans sa documentation…</p>}
-            {!guideLoading && guide?.status === "sourced" && (
+            {!guideLoading && (guide?.status === "sourced" || guide?.status === "general") && (
               <div className="mt-3 rounded-xl bg-surface-sunken p-4">
                 <ol className="space-y-2.5">
                   {guide.steps.map((s, i) => (
@@ -151,15 +151,15 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
                   ))}
                 </ol>
                 {guide.caveats && <p className="mt-3 text-[12.5px] text-text-soft">À savoir : {guide.caveats}</p>}
-                <p className="mt-3 text-[12px] text-text-faint">
+                {guide.status === "sourced" && <p className="mt-3 text-[12px] text-text-faint">
                   Procédure trouvée dans la documentation :{" "}
                   {guide.sources.map((u, i) => (
                     <a key={u} href={u} target="_blank" rel="noreferrer" className="mr-2 font-semibold text-accent-strong hover:underline">source {i + 1}</a>
                   ))}
-                </p>
+                </p>}
               </div>
             )}
-            {!guideLoading && guide?.status !== "sourced" && (
+            {!guideLoading && guide?.status !== "sourced" && guide?.status !== "general" && (
               <div className="mt-3 rounded-xl bg-surface-sunken p-4 text-[13.5px] text-text-soft">
                 <p className="font-semibold text-text">
                   {guide?.status === "no_sources" ? `Je n'ai pas trouvé de procédure fiable pour ${label}, donc je ne vous en invente pas.` : "La recherche de procédure n'est pas disponible pour le moment."}
@@ -199,6 +199,19 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
                 </div>
               )}
             </div>
+            {item.connection_only ? (
+              <div className="mt-4">
+                <p className="text-[14px] font-semibold text-text">2. Nous mettons la connexion en place avec vous.</p>
+                {asked ? (
+                  <p className="mt-2 rounded-xl bg-success/10 px-4 py-3 text-[13.5px] text-text">Demande reçue : nous vous contactons pour finaliser la connexion à {label} (accès en lecture, révocable à tout moment).</p>
+                ) : (
+                  <button type="button" onClick={() => void askConnection()} className="mt-2 rounded-full bg-text px-6 py-2.5 text-[13.5px] font-semibold text-surface hover:bg-text/90">
+                    Demander la mise en place de la connexion
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
             <p className="mt-2 text-[14px] font-semibold text-text">2. Déposez le fichier ici.</p>
 
             <div
@@ -220,6 +233,9 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
                 Choisir des fichiers
               </button>
             </div>
+
+              </>
+            )}
 
             {received.length > 0 && (
               <ul className="mt-4 space-y-2">

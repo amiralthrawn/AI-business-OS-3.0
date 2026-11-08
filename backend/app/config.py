@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # web and returns its sources. Used first when set.
     openrouter_api_key: str | None = None
     openrouter_model: str = "perplexity/sonar"
+    openrouter_guide_model: str = "perplexity/sonar-pro"  # the connection guide: more reliable than the light search model
     openrouter_agent_model: str = "google/gemini-2.5-flash"  # the Veilleur's reasoning model (needs tool calling)
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.5-flash-lite"

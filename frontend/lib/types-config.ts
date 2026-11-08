@@ -68,6 +68,7 @@ export type IntegrationItem = {
   category_label: string;
   data: string[];
   ai_use: string;
+  connection_only?: boolean;
   export_help: string;
   import_kinds: ImportKind[];
   direct_methods: string[];
@@ -99,7 +100,7 @@ export type ImportResultRead = {
 export type ToolGuide = {
   tool: string;
   label: string;
-  status: "sourced" | "no_sources" | "unavailable";
+  status: "sourced" | "general" | "no_sources" | "unavailable";
   steps: { title: string; detail: string }[];
   sources: string[];
   caveats: string;

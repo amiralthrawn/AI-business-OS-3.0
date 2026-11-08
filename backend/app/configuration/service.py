@@ -173,6 +173,7 @@ def integration_plan(config: dict) -> list[dict]:
             "data": list(category.data),
             "ai_use": category.ai_use,
             "export_help": tools.KNOWN_EXPORTS.get(key, category.export),
+            "connection_only": not category.import_kinds or key in {"wordpress", "shopify", "woocommerce", "prestashop", "wix", "webflow", "squarespace", "site_sur_mesure"},
             "import_kinds": list(category.import_kinds),
             "direct_methods": list(category.direct),
             "status": "imported" if state.get("data") == "imported" else "to_connect",

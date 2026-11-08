@@ -45,6 +45,32 @@ _ASK_SYSTEM = (
 )
 
 
+_CONNECT_SYSTEM = (
+    "Tu aides une PME française à autoriser une application tierce à se connecter à un service qu'elle utilise, pour que ses données se synchronisent. "
+    "Réponds à partir de la documentation officielle ou d'articles d'aide fiables. N'invente jamais un menu ou un bouton. "
+    "Explique la méthode d'autorisation réelle du service (OAuth avec consentement, clé d'API, mot de passe d'application, accès IMAP…), les droits à accorder en lecture, "
+    "qui peut le faire (administrateur du compte ou non) et les pièges courants. "
+    "Si tu ne trouves aucune procédure documentée, réponds exactement : NON_TROUVE. "
+    "Sinon réponds par une liste numérotée de 4 à 7 étapes, une par ligne, au format « 1. Titre court : une phrase simple pour un non-technicien ». "
+    "Puis, sur une dernière ligne qui commence par « À savoir : », les limites éventuelles. Rien d'autre."
+)
+
+_GENERAL_SYSTEM = (
+    "Tu aides une PME française à connecter un service à son logiciel de pilotage. Réponds avec les pratiques courantes et stables de ce service que tu connais de façon sûre "
+    "(méthode d'autorisation, droits en lecture, qui peut le faire). N'invente aucun libellé de menu précis dont tu n'es pas certain : reste au niveau des grandes étapes. "
+    "Si tu n'es pas sûr, réponds exactement : NON_TROUVE. "
+    "Sinon réponds par une liste numérotée de 4 à 6 étapes, une par ligne, au format « 1. Titre court : une phrase simple pour un non-technicien ». "
+    "Puis une dernière ligne « À savoir : » avec les limites. Rien d'autre."
+)
+
+# Services the company connects (authorisation) rather than exports files from.
+_CONNECT_TOOLS = {"wordpress", "shopify", "woocommerce", "prestashop", "wix", "webflow", "squarespace", "site_sur_mesure"}
+
+
+def is_connection(tool_key: str, category: tools.Category) -> bool:
+    return not category.import_kinds or tool_key in _CONNECT_TOOLS
+
+
 class GuideError(RuntimeError):
     pass
 
@@ -124,13 +150,25 @@ def get_guide(session: Session, company_id: uuid.UUID, tool_key: str, *, refresh
     if not perplexity.configured():
         return {**base, "status": "unavailable", "reason": "not_configured", "steps": [], "sources": [], "caveats": ""}
 
+    connection = is_connection(tool_key, category)
     wanted = ", ".join(KIND_LABEL[k] for k in category.import_kinds) or "ses relevés"
-    question = (
-        f"Comment exporter depuis le logiciel « {label} » ({category.label}) en CSV ou Excel : {wanted} ? "
-        "Donne la procédure exacte telle que documentée, et dis si le logiciel permet aussi un export automatique ou une API."
-    )
+    if connection:
+        question = (
+            f"Comment autoriser une application externe à se connecter à « {label} » ({category.label}) et à synchroniser ses données en lecture ? "
+            "Quelle méthode (OAuth, clé d'API, mot de passe d'application), quels droits, qui doit le faire ?"
+        )
+        system = _CONNECT_SYSTEM
+    else:
+        question = (
+            f"Comment exporter depuis le logiciel « {label} » ({category.label}) en CSV ou Excel : {wanted} ? "
+            "Donne la procédure exacte telle que documentée, et dis si le logiciel permet aussi un export automatique ou une API."
+        )
+        system = _RESEARCH_SYSTEM
+    from app.config import get_settings
+
+    guide_model = get_settings().openrouter_guide_model if perplexity._openrouter_on() else None
     try:
-        text, sources = perplexity.ask(_RESEARCH_SYSTEM, question)
+        text, sources = perplexity.ask(system, question, model=guide_model)
     except perplexity.PerplexityError as exc:
         return {**base, "status": "unavailable", "reason": str(exc)[:900], "steps": [], "sources": [], "caveats": ""}
     if "NON_TROUVE" in text:
@@ -142,11 +180,21 @@ def get_guide(session: Session, company_id: uuid.UUID, tool_key: str, *, refresh
             steps, why = [], "La réponse trouvée n'était pas une procédure exploitable."
     if steps and not sources:
         steps, why = [], "Une procédure a été proposée mais sans aucune source : je ne l'affiche pas."
+    general = False
+    if not steps and connection and perplexity._openrouter_on():
+        # no documented source found: well-known connection principles, shown as such (never as sourced)
+        try:
+            gtext = perplexity.chat(_GENERAL_SYSTEM, f"Service : « {label} » ({category.label}).")
+            gsteps, gcaveats = ("", "") if "NON_TROUVE" in gtext else _parse_steps(gtext)
+            if len(gsteps) >= 2:
+                steps, caveats, general, why = gsteps, f"Connaissances générales de l'IA, non sourcées : vérifiez dans l'aide officielle de {label}. {gcaveats}".strip(), True, ""
+        except perplexity.PerplexityError:
+            pass
     guide = {
         **base,
-        "status": "sourced" if steps else "no_sources",
+        "status": ("general" if general else "sourced") if steps else "no_sources",
         "steps": steps,
-        "sources": sources[:6] if steps else [],
+        "sources": sources[:6] if steps and not general else [],
         "caveats": caveats if steps else "",
         "reason": why,
     }
@@ -167,11 +215,12 @@ def ask(session: Session, company_id: uuid.UUID, tool_key: str, question: str) -
     if not perplexity.configured():
         return {"answer": "Je ne peux pas chercher sur le web pour le moment (recherche non configurée). Utilisez les instructions générales de la page.", "sources": [], "grounded": False}
     from app.agents import service as agents_service
+    from app.config import get_settings
 
     past = agents_service.recall(session, company_id, "guide", n=4, only=label)
     system = _ASK_SYSTEM + (f"\nÉchanges précédents avec ce client sur ce logiciel (n'y reviens pas, complète) :\n{past}" if past else "")
     try:
-        text, sources = perplexity.ask(system, f"Logiciel : {label} ({category.label}).\nQuestion du client : {question}")
+        text, sources = perplexity.ask(system, f"Logiciel : {label} ({category.label}).\nQuestion du client : {question}", model=(get_settings().openrouter_guide_model if perplexity._openrouter_on() else None))
     except perplexity.PerplexityError:
         return {"answer": "La recherche est momentanément indisponible. Réessayez dans un instant.", "sources": [], "grounded": False}
     if not sources:

@@ -84,9 +84,9 @@ def _walk(node: object, texts: list[str], urls: list[str]) -> None:
             _walk(value, texts, urls)
 
 
-def _ask_openrouter(system: str, user: str, timeout: float) -> tuple[str, list[str]]:
+def _ask_openrouter(system: str, user: str, timeout: float, model: str | None = None) -> tuple[str, list[str]]:
     settings = get_settings()
-    body = {"model": settings.openrouter_model, "temperature": 0.1, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    body = {"model": model or settings.openrouter_model, "temperature": 0.1, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     try:
         res = httpx.post(OPENROUTER_URL, headers={"Authorization": f"Bearer {settings.openrouter_api_key.strip()}", "Content-Type": "application/json"}, json=body, timeout=timeout)
     except httpx.HTTPError as exc:
@@ -99,7 +99,7 @@ def _ask_openrouter(system: str, user: str, timeout: float) -> tuple[str, list[s
         text = message.get("content") or ""
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise PerplexityError("Unexpected OpenRouter answer") from exc
-    _record(settings.openrouter_model, data.get("usage"))
+    _record(model or settings.openrouter_model, data.get("usage"))
     urls: list[str] = [c for c in (data.get("citations") or message.get("citations") or []) if isinstance(c, str)]
     for ann in message.get("annotations") or []:
         if isinstance(ann, dict):
@@ -178,7 +178,7 @@ def _post(body: dict, timeout: float) -> httpx.Response:
         raise PerplexityError(f"Perplexity unreachable: {exc}") from exc
 
 
-def ask(system: str, user: str, *, timeout: float = 90.0) -> tuple[str, list[str]]:
+def ask(system: str, user: str, *, timeout: float = 90.0, model: str | None = None) -> tuple[str, list[str]]:
     """Returns (answer text, source URLs). Raises PerplexityError.
 
     Uses the Perplexity Agent API (the former Sonar endpoint was retired).
@@ -189,7 +189,7 @@ def ask(system: str, user: str, *, timeout: float = 90.0) -> tuple[str, list[str
     if not configured():
         raise PerplexityError("No search key is set (GEMINI_API_KEY or PERPLEXITY_API_KEY)")
     if _openrouter_on():
-        return _ask_openrouter(system, user, timeout)
+        return _ask_openrouter(system, user, timeout, model)
     if _gemini_on():
         return _ask_gemini(system, user, timeout)
     body: dict = {"instructions": system, "input": user, "tools": [{"type": "web_search"}]}

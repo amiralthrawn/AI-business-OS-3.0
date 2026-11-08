@@ -137,8 +137,9 @@ def routes(agent: str) -> list[dict]:
         ]
     if agent == "guide":
         return [
-            {"task": "Rechercher la procédure d'export d'un logiciel, avec sources", "model": settings.openrouter_model},
-            {"task": "Répondre à une question sur un logiciel, avec sources", "model": settings.openrouter_model},
+            {"task": "Rechercher la procédure d'export ou de connexion d'un logiciel, avec sources", "model": settings.openrouter_guide_model},
+            {"task": "Répondre à une question sur un logiciel, avec sources", "model": settings.openrouter_guide_model},
+            {"task": "Connexion courante sans source trouvée (Gmail, Outlook…) : principes généraux, signalés non sourcés", "model": settings.openrouter_agent_model},
             {"task": "Suggérer l'étape suivante après un import", "model": None},
         ]
     return [
@@ -171,6 +172,8 @@ def _model_in_use(agent: str, settings) -> dict:
     if (settings.openrouter_api_key or "").strip():
         if agent == "veilleur":
             return {"provider": "OpenRouter", "model": settings.openrouter_agent_model, "kind": "agent", "note": f"IA générative avec outils : lit les sites, cherche sur le web ({settings.openrouter_model}), interroge l'Analyste et enregistre ses trouvailles."}
+        if agent == "guide":
+            return {"provider": "OpenRouter", "model": settings.openrouter_guide_model, "kind": "web_search", "note": "Recherche web avec sources, modèle renforcé ; repli sur les connaissances générales (signalé comme non sourcé) pour les connexions courantes."}
         return {"provider": "OpenRouter", "model": settings.openrouter_model, "kind": "web_search", "note": "Recherche web avec sources."}
     if (settings.gemini_api_key or "").strip():
         return {"provider": "Google Gemini", "model": settings.gemini_model, "kind": "web_search", "note": "Recherche web avec sources (Google Search)."}
