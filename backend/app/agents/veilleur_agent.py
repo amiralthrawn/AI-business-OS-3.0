@@ -31,7 +31,7 @@ SYSTEM = (
     "lis les sites indiqués ; recoupe avec une recherche web ; enregistre chaque information utile avec save_finding (une par sujet, avec ses sources). "
     "Règles : n'invente jamais un chiffre, un prix, un nom ou une date ; si une page est illisible (connexion, JavaScript, blocage), dis-le et cherche une autre voie ; "
     "n'indique comme source que des adresses que tu as réellement consultées ; si tu ne trouves rien de fiable, explique précisément ce que tu as essayé. "
-    "Termine par une réponse claire : ce que tu as trouvé, ce que tu as enregistré, ce qui manque et la suite que tu proposes."
+    "Pour chaque information, propose une action concrète via suggested_action : calendar_event (avec la date AAAA-MM-JJ) pour un salon, une échéance ou un rendez-vous ; task pour le reste (contacter un fournisseur, comparer un prix, ajouter une référence). Le client acceptera ou refusera chaque action. Un événement sur plusieurs jours : une trouvaille par date importante (début, fin). Si tu as lu le site de l'entreprise (elle est décrite dans le profil), appuie-toi dessus. Termine par une réponse claire : ce que tu as trouvé, ce que tu as enregistré, ce qui manque et la suite que tu proposes."
 )
 
 TOOLS = [
@@ -201,6 +201,10 @@ def _tool(session, company, name: str, args: dict, seen: set[str], found: list[d
         if not sources:
             return "Refusé : aucune des sources citées n'a été consultée. Consulte la page (read_page) ou fais une recherche, puis cite ces adresses."
         item = {k: args.get(k) for k in ("title", "summary", "why_it_matters", "category", "date", "suggested_action")}
+        suggestion = item.get("suggested_action") if isinstance(item.get("suggested_action"), dict) else {}
+        if suggestion.get("type") not in ("calendar_event", "task"):
+            # a dated finding is proposed as a calendar event, anything else as a task to accept or refuse
+            item["suggested_action"] = {"type": "calendar_event" if item.get("date") else "task", "text": str(item.get("title") or "")[:200]}
         if not str(item.get("title") or "").strip():
             return "Refusé : titre manquant."
         created = save(item, sources)

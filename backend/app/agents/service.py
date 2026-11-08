@@ -93,7 +93,13 @@ def save_settings(session: Session, company_id: uuid.UUID, enabled: bool, autono
 
 
 def knowledge(session: Session, company_id: uuid.UUID) -> list[dict]:
-    return list(config_service.get_configuration(session, company_id).get("agent_knowledge") or [])
+    config = config_service.get_configuration(session, company_id)
+    items = list(config.get("agent_knowledge") or [])
+    site = (config.get("website") or {}).get("analysis")
+    if site:
+        offer = ", ".join(site.get("offer") or [])[:500]
+        items.append({"question": "Que montre le site web de l'entreprise (analysé par l'Analyste) ?", "answer": f"{site.get('summary', '')} Offre : {offer}. Public : {site.get('audience', '')}"[:1400]})
+    return items
 
 
 # --- which model does each agent use, and requests to change it ---------------
@@ -127,7 +133,10 @@ def routes(agent: str) -> list[dict]:
             {"task": "Répondre à une question sur un logiciel, avec sources", "model": settings.openrouter_model},
             {"task": "Suggérer l'étape suivante après un import", "model": None},
         ]
-    return [{"task": "Détecter les risques et opportunités dans vos chiffres", "model": None}]
+    return [
+        {"task": "Détecter les risques et opportunités dans vos chiffres", "model": None},
+        {"task": "Lire et comprendre votre site web en profondeur, proposer des améliorations", "model": settings.openrouter_agent_model},
+    ]
 
 
 def model_in_use(agent: str) -> dict:
@@ -144,6 +153,8 @@ def model_in_use(agent: str) -> dict:
 
 def _model_in_use(agent: str, settings) -> dict:
     if agent == "analyste":
+        if (settings.openrouter_api_key or "").strip():
+            return {"provider": "Calculs internes + OpenRouter", "model": settings.openrouter_agent_model, "kind": "rules", "note": "Règles et statistiques sur vos chiffres (sans IA) ; un modèle de langage lit votre site web."}
         return {"provider": "Calculs internes", "model": None, "kind": "rules", "note": "Aucun modèle de langage : règles et statistiques sur vos chiffres."}
     if (settings.openrouter_api_key or "").strip():
         if agent == "veilleur":
@@ -502,10 +513,28 @@ def run_analyste(session: Session, company: Company) -> AgentRun:
     context.configuration = config
     session.commit()
     remember(session, company.id, "analyste", "Analyse de vos données", summary)
+    _refresh_site(session, company)
     return run
 
 
-def _ingest(session: Session, company: Company, item: dict, sources: list[str]) -> bool:
+def _refresh_site(session: Session, company: Company) -> None:
+    """A standing task: the site is re-read every week, so the proposals follow it."""
+
+    from app.website import intelligence
+
+    if not company.website_url:
+        return
+    saved = (config_service.get_configuration(session, company.id).get("website") or {})
+    at = saved.get("analysed_at")
+    if at and now() - datetime.fromisoformat(at) < timedelta(days=7):
+        return
+    try:
+        intelligence.integrate(session, company)
+    except (intelligence.SiteError, perplexity.PerplexityError):
+        session.rollback()
+
+
+def _ingest(session: Session, company: Company, item: dict, sources: list[str], agent: str = "veilleur") -> bool:
     title = str(item.get("title")).strip()[:255]
     when = veilleur.parse_date(item.get("date"))
     key = hashlib.sha1(f"{title.lower()}|{when.date() if when else ''}".encode()).hexdigest()
@@ -517,7 +546,7 @@ def _ingest(session: Session, company: Company, item: dict, sources: list[str]) 
         action = "task"
     category = str(item.get("category") or "autre")[:40]
     proposal = AgentProposal(
-        company_id=company.id, agent="veilleur", kind="finding", category=category, title=title,
+        company_id=company.id, agent=agent, kind="finding", category=category, title=title,
         summary=str(item.get("summary") or "")[:1500] or None, why=str(item.get("why_it_matters") or "")[:1500] or None,
         sources=sources[:6], event_date=when, action_type=action,
         action_payload={"text": str(suggestion.get("text") or title)[:255]} if action != "none" else None,
@@ -606,6 +635,7 @@ def guide(session: Session, company: Company) -> dict:
     messaging = any(state.get("data", "none") != "none" for key, state in tools.items() if _category(key) == "messaging")
     count = lambda model: session.query(model).count()
     imports = {e.get("kind") for e in (config.get("imports") or [])}
+    site = config.get("website") or {}
     checks = [
         (10, bool(company.industry), "Dire quel est votre métier", "Pour que l'IA parle votre langage et surveille les bons sujets.", "/settings"),
         (10, any(answers.get(k) for k in ("goals", "problems", "externals")), "Répondre aux questions sur vos objectifs et vos difficultés", "Pour que chaque recommandation serve vos vrais objectifs.", "/settings"),
@@ -617,7 +647,8 @@ def guide(session: Session, company: Company) -> dict:
         (5, "fec" in imports, "Déposer votre comptabilité (FEC)", "Donne une vue exacte de votre chiffre d'affaires et de vos charges.", "/settings"),
         (10, session.query(UserProfile).count() > 1, "Inviter votre équipe", "Chacun voit ce qui le concerne et peut valider ses décisions.", "/people"),
         (5, messaging or count(Communication) > 0, "Relier vos e-mails et votre messagerie", "L'IA pourra analyser et prioriser vos échanges.", "/settings"),
-        (5, bool(company.website_url), "Renseigner votre site web", "Le Veilleur contrôlera votre visibilité en ligne.", "/settings"),
+        (10, bool(company.website_url) or bool(site.get("request")), "Ajouter le site web de l'entreprise (ou nous demander d'en créer un)", "L'Analyste lit votre site en profondeur pour comprendre votre métier et partage ce qu'il comprend avec les autres agents.", "/communications?tab=website"),
+        (5, bool(site.get("analysis")) or not company.website_url, "Faire analyser votre site web", "Sans analyse, aucune amélioration ni synchronisation ne peut vous être proposée.", "/communications?tab=website"),
         (10, perplexity.configured(), "Activer le Veilleur (clé de recherche web)", "Sans elle, aucune recherche externe : salons, prix, concurrents, avis Google.", "/settings#agents"),
     ]
     total = sum(w for w, *_ in checks)

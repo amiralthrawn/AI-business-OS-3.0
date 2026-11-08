@@ -25,6 +25,13 @@ def get_company(db: Session = Depends(get_db)) -> Company:
 def update_company(payload: CompanyUpdate, db: Session = Depends(get_db)) -> Company:
     company = _the_company(db)
     for field, value in payload.model_dump(exclude_unset=True).items():
+        if field == "website_url":
+            from app.website.intelligence import SiteError, normalise_url
+
+            try:
+                value = normalise_url(value) if value and value.strip() else None
+            except SiteError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         setattr(company, field, value)
     db.add(company)
     db.commit()

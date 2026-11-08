@@ -544,6 +544,8 @@ export const discardLead = (leadId: string) => sendJSON<SourcingLeadView>("POST"
 // Website intelligence
 export const getWebsite = () => getJSON<WebsiteState>("/website", "Analyse du site indisponible");
 export const setWebsiteUrl = (url: string | null) => sendJSON<{ website_url: string | null }>("PATCH", "/website/site", { website_url: url }, "Enregistrement impossible");
+export const integrateWebsite = (url?: string | null) => sendJSON<{ pages: number; created: number }>("POST", "/website/integrate", { website_url: url ?? null }, "Analyse du site impossible");
+export const requestWebsiteCreation = (notes: string | null) => sendJSON<{ status: string }>("POST", "/website/creation-request", { notes }, "Demande impossible");
 export const runWebsiteAudit = () => sendJSON<AIRunView & { proposals: WebsiteProposal[] }>("POST", "/website/audit", undefined, "Analyse impossible");
 export const submitWebsiteProposal = (id: string) =>
   sendJSON<WebsiteProposal>("POST", `/website/proposals/${id}/submit`, undefined, "Soumission impossible");

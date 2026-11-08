@@ -89,6 +89,7 @@ export default function OnboardingWizard({
   const [importRefresh, setImportRefresh] = useState(0);
 
   const [name, setName] = useState(initialCompany?.name ?? "");
+  const [website, setWebsite] = useState("");
   const [sectorKey, setSectorKey] = useState("");
   const [sectorCustom, setSectorCustom] = useState("");
   const [userName, setUserName] = useState("");
@@ -138,7 +139,7 @@ export default function OnboardingWizard({
   }
 
   async function persist() {
-    await Promise.all([updateCompany({ name: name.trim() || undefined }), saveConfiguration(payload())]);
+    await Promise.all([updateCompany({ name: name.trim() || undefined, website_url: website.trim() || undefined }), saveConfiguration(payload())]);
   }
 
   function stepReady(): boolean {
@@ -262,6 +263,18 @@ export default function OnboardingWizard({
                 placeholder="ex. Acme Négoce"
                 className="w-full rounded-xl border-[1.5px] border-border-strong px-4 py-3.5 text-[17px] font-semibold outline-none focus:border-accent"
               />
+            </div>
+
+            <div className="mt-7">
+              <label className="mb-2 block text-[13px] font-semibold text-text">Site web de l&rsquo;entreprise <span className="font-normal text-text-faint">(facultatif)</span></label>
+              <input
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="www.votre-entreprise.fr"
+                inputMode="url"
+                className="w-full rounded-xl border-[1.5px] border-border-strong px-4 py-3 text-[15px] outline-none focus:border-accent"
+              />
+              <p className="mt-1.5 text-[12.5px] text-text-faint">L&rsquo;Analyste le lira pour comprendre votre métier. Pas de site ? Vous pourrez nous demander d&rsquo;en créer un.</p>
             </div>
 
             <div className="mt-7">

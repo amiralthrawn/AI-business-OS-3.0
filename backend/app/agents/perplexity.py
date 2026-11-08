@@ -112,6 +112,29 @@ def _ask_openrouter(system: str, user: str, timeout: float) -> tuple[str, list[s
     return text, list(dict.fromkeys(urls))
 
 
+def chat(system: str, user: str, *, model: str | None = None, timeout: float = 120.0) -> str:
+    """A plain generative call (no web search) through OpenRouter. Raises PerplexityError."""
+
+    settings = get_settings()
+    if not _openrouter_on():
+        raise PerplexityError("No language model is configured (OPENROUTER_API_KEY)")
+    chosen = model or settings.openrouter_agent_model
+    body = {"model": chosen, "temperature": 0.2, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    try:
+        res = httpx.post(OPENROUTER_URL, headers={"Authorization": f"Bearer {settings.openrouter_api_key.strip()}", "Content-Type": "application/json"}, json=body, timeout=timeout)
+    except httpx.HTTPError as exc:
+        raise PerplexityError(f"OpenRouter unreachable: {exc}") from exc
+    if res.status_code != 200:
+        raise PerplexityError(f"OpenRouter answered {res.status_code}: {res.text[:600]}")
+    try:
+        data = res.json()
+        text = data["choices"][0]["message"].get("content") or ""
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise PerplexityError("Unexpected OpenRouter answer") from exc
+    _record(chosen, data.get("usage"))
+    return text.strip()
+
+
 def _ask_gemini(system: str, user: str, timeout: float) -> tuple[str, list[str]]:
     settings = get_settings()
     body = {

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import SiteIntegration from "@/components/communications/SiteIntegration";
 import AIRunSteps from "@/components/objects/AIRunSteps";
 import SectionLabel from "@/components/objects/SectionLabel";
 import Badge from "@/components/ui/Badge";
@@ -44,6 +45,7 @@ export default function WebsitePanel({ initial, canWrite, canConfigure }: { init
 
   return (
     <div className="space-y-8">
+      {canConfigure && <SiteIntegration websiteUrl={initial.website_url} intelligence={initial.intelligence} />}
       <div className="flex flex-wrap items-center gap-2">
         {canConfigure && (
           <>

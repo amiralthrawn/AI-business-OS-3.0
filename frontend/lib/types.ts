@@ -447,6 +447,7 @@ export interface CompanyRead {
 export interface CompanyUpdate {
   name?: string;
   industry?: string;
+  website_url?: string;
 }
 
 export interface BusinessContextRead {

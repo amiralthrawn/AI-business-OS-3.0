@@ -9,8 +9,10 @@ class CompanyRead(BaseModel):
     id: uuid.UUID
     name: str
     industry: str | None
+    website_url: str | None = None
 
 
 class CompanyUpdate(BaseModel):
     name: str | None = None
     industry: str | None = None
+    website_url: str | None = None

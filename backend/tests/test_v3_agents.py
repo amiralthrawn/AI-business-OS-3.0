@@ -333,3 +333,35 @@ def test_full_analysis_is_handed_to_the_veilleur(client, monkeypatch):
     assert res["shared_chars"] > 200
     for part in ("## Vue d'ensemble", "## Risques détectés", "## Éléments de vos données liés à la demande", "STM32F4", "Résumé de la dernière analyse"):
         assert part in seen["request"]
+
+
+def test_site_is_read_understood_shared_and_turned_into_proposals(client, monkeypatch):
+    from app.website import intelligence
+
+    headers = _director(client, "Site Co", "site@co.example")
+    guide = client.get("/agents/overview", headers=headers).json()["guide"]
+    assert any("site web" in s["title"].lower() for s in guide["steps"])
+    assert client.patch("/company", headers=headers, json={"website_url": "pas un site"}).status_code == 400
+    assert client.patch("/company", headers=headers, json={"website_url": "www.fe-components.fr"}).json()["website_url"] == "https://www.fe-components.fr"
+    site = {"url": "https://www.fe-components.fr/", "emails": ["contact@fe-components.fr"], "phones": [], "social": [], "schema": [],
+            "pages": [{"url": "https://www.fe-components.fr/", "title": "FE Components", "description": "Négoce de composants", "headings": ["Condensateurs"], "text": "Nous négocions des composants.", "words": 5}]}
+    monkeypatch.setattr(intelligence, "crawl", lambda url: site)
+    monkeypatch.setattr(intelligence, "understand", lambda name, s: ({"summary": "Négociant en composants électroniques.", "offer": ["Condensateurs", "Microcontrôleurs"], "audience": "Industriels", "strengths": [], "weaknesses": ["Pas de prix"],
+                                                                      "improvements": [{"title": "Ajouter un formulaire de devis", "why": "Plus de demandes", "action": "Créer le formulaire"}], "syncs": [{"title": "Catalogue vers le site", "why": "Prix à jour"}]}, True))
+    res = client.post("/website/integrate", headers=headers, json={}).json()
+    assert res["created"] == 3 and res["not_in_catalog"] == ["Condensateurs", "Microcontrôleurs"]
+    overview = client.get("/agents/overview", headers=headers).json()
+    titles = [p["title"] for p in overview["proposals"]]
+    assert "Site web : Ajouter un formulaire de devis" in titles and any(p["agent"] == "analyste" for p in overview["proposals"])
+    assert not any("Ajouter le site web" in s["title"] or "Faire analyser" in s["title"] for s in overview["guide"]["steps"])
+    state = client.get("/website", headers=headers).json()
+    assert state["intelligence"]["analysis"]["summary"].startswith("Négociant")
+
+
+def test_a_company_without_site_can_ask_for_one(client):
+    headers = _director(client, "Nosite Co", "nosite@co.example")
+    assert client.post("/website/creation-request", headers=headers, json={"notes": "Vitrine + catalogue"}).status_code == 201
+    state = client.get("/website", headers=headers).json()
+    assert state["intelligence"]["request"]["status"] == "requested"
+    guide = client.get("/agents/overview", headers=headers).json()["guide"]
+    assert not any("Ajouter le site web" in s["title"] for s in guide["steps"])

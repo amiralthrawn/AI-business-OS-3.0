@@ -269,4 +269,14 @@ export interface WebsiteState {
   website_url: string | null;
   run: AIRunView | null;
   proposals: WebsiteProposal[];
+  intelligence?: SiteIntelligence | null;
+}
+export interface SiteAnalysis {
+  summary: string; offer: string[]; audience: string; strengths: string[]; weaknesses: string[];
+  improvements: { title: string; why: string; action: string }[]; syncs: { title: string; why: string }[];
+}
+export interface SiteIntelligence {
+  url?: string; analysed_at?: string; by_model?: boolean; pages?: { url: string; title: string; words: number }[];
+  emails?: string[]; phones?: string[]; social?: string[]; analysis?: SiteAnalysis; not_in_catalog?: string[];
+  request?: { status: string; at: string; notes: string | null } | null;
 }
