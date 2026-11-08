@@ -436,3 +436,57 @@ def test_mail_and_site_control_are_asked_until_done_and_count_in_the_percentage(
     after = client.get("/agents/overview", headers=headers).json()["guide"]
     assert after["percent"] > before["percent"]
     assert "/?service=mail" not in [s["href"] for s in after["steps"]]
+
+
+def _wait_for(client, headers, task_id, wanted, seconds=40):
+    import time
+
+    end = time.time() + seconds
+    while time.time() < end:
+        data = client.get(f"/browser/tasks/{task_id}", headers=headers).json()
+        if data["status"] in wanted:
+            return data
+        time.sleep(0.3)
+    raise AssertionError(f"timeout, last: {data}")
+
+
+def test_ai_browser_acts_hands_over_to_the_person_and_finishes(client, monkeypatch, tmp_path):
+    import http.server
+    import os
+    import threading
+
+    from app.agents import veilleur_agent
+    from app.browser import manager
+
+    exe = "/opt/pw-browsers/chromium-1243/chrome-linux64/chrome"
+    if not os.path.exists(exe):
+        pytest.skip("no local chromium")
+    (tmp_path / "index.html").write_text("<html><body><h1>Portail</h1><button style='position:absolute;left:100px;top:100px;width:200px;height:60px' onclick=\"document.title='clicked'\">Valider</button><input id=i style='position:absolute;left:100px;top:300px'></body></html>")
+    handler = lambda *a, **k: http.server.SimpleHTTPRequestHandler(*a, directory=str(tmp_path), **k)
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_address[1]}/index.html"
+
+    headers = _director(client, "Browse Co", "browse@co.example")
+    s = get_settings()
+    monkeypatch.setattr(s, "openrouter_api_key", "k")
+    monkeypatch.setattr(s, "browser_local", True)
+    monkeypatch.setattr(s, "browser_local_executable", exe)
+    assert client.get("/browser/status", headers=headers).json()["available"] is True
+    script = iter([
+        {"name": "click", "args": {"x": 150, "y": 130, "why": "Valider"}},
+        {"name": "ask_human", "args": {"reason": "Connectez-vous"}},
+        {"name": "done", "args": {"summary": "Portail ouvert et validé.", "success": True}},
+    ])
+    monkeypatch.setattr(manager, "_decide", lambda task, shot, text: next(script))
+    task = client.post("/browser/tasks", headers=headers, json={"goal": "Valider le portail", "start_url": url}).json()
+    waiting = _wait_for(client, headers, task["id"], {"needs_human", "failed", "done"})
+    assert waiting["status"] == "needs_human" and waiting["reason"] == "Connectez-vous"
+    assert any("Clique" in st["text"] for st in waiting["steps"])
+    assert client.get(f"/browser/tasks/{task['id']}/screen", headers=headers).headers["content-type"] == "image/jpeg"
+    assert client.post(f"/browser/tasks/{task['id']}/input", headers=headers, json={"type": "type", "text": "motdepasse-secret"}).status_code == 200
+    assert client.post(f"/browser/tasks/{task['id']}/hand-back", headers=headers).json()["status"] == "running"
+    finished = _wait_for(client, headers, task["id"], {"done", "failed"})
+    assert finished["status"] == "done" and "validé" in finished["summary"]
+    assert "motdepasse-secret" not in str(finished)  # what the person types is never logged
+    server.shutdown()

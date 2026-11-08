@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import BrowserPanel from "@/components/agents/BrowserPanel";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import { type AgentsOverview, type AgentsUsage, agentsCall, askToolGuide, getIntegrationPlan } from "@/lib/api";
@@ -22,7 +23,7 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleString("fr-FR", { day: "n
 
 // The three agents in one place: what powers each, its latest tasks, a direct
 // way to ask each one something, and a request to change its model.
-export default function AgentsHub({ overview }: { overview: AgentsOverview }) {
+export default function AgentsHub({ overview, browserGoal }: { overview: AgentsOverview; browserGoal?: string }) {
   const [agents, setAgents] = useState(overview.agents);
   const [usage, setUsage] = useState(overview.usage ?? null);
   const [requests, setRequests] = useState<ModelRequest[]>(overview.model_requests ?? []);
@@ -36,6 +37,7 @@ export default function AgentsHub({ overview }: { overview: AgentsOverview }) {
 
   return (
     <div className="space-y-6">
+      <BrowserPanel initialGoal={browserGoal ?? ""} />
       {usage && <UsagePanel usage={usage} agents={agents} />}
       {agents.map((a) => (
         <AgentCard key={a.key} agent={a} usage={usage?.agents[a.key]} catalog={usage?.catalog ?? []} requests={requests.filter((r) => r.agent === a.key)} onChanged={refresh} />

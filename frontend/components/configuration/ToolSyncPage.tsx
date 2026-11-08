@@ -199,6 +199,12 @@ export default function ToolSyncPage({ toolKey, label, onRemove }: { toolKey: st
                 </div>
               )}
             </div>
+            <a
+              href={`/agents?goal=${encodeURIComponent(item.connection_only ? `Aide-moi à connecter ${label} : ouvre ${label}, guide-moi pas à pas et passe-moi la main pour me connecter et autoriser l'accès.` : `Exporte depuis ${label} les données utiles (${item.import_kinds.join(", ")}) au format CSV ou Excel.`)}`}
+              className="mt-3 inline-block rounded-full border-[1.5px] border-accent px-4 py-2 text-[13px] font-semibold text-accent-strong hover:bg-accent-soft"
+            >
+              Laisser l&rsquo;IA le faire dans le navigateur
+            </a>
             {item.connection_only ? (
               <div className="mt-4">
                 <p className="text-[14px] font-semibold text-text">2. Nous mettons la connexion en place avec vous.</p>

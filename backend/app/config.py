@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # web and returns its sources. Used first when set.
     openrouter_api_key: str | None = None
     openrouter_model: str = "perplexity/sonar"
+    browserbase_api_key: str | None = None  # cloud browser for the AI browser agent
+    browserbase_project_id: str | None = None
+    browser_local: bool = False  # dev only: drive a local Chromium instead of the cloud
+    browser_local_executable: str | None = None
     openrouter_guide_model: str = "perplexity/sonar-pro"  # the connection guide: more reliable than the light search model
     openrouter_agent_model: str = "google/gemini-2.5-flash"  # the Veilleur's reasoning model (needs tool calling)
     gemini_api_key: str | None = None

@@ -692,3 +692,24 @@ export const askToolGuide = (tool: string, question: string) =>
   configJson<import("./types-config").GuideAnswer>(`tools/${encodeURIComponent(tool)}/guide/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) });
 export const getToolNextSteps = (tool: string) => configJson<import("./types-config").NextSteps>(`tools/${encodeURIComponent(tool)}/next-steps`);
 export const addToolReminder = (tool: string) => configJson<{ id: string; starts_at: string }>(`tools/${encodeURIComponent(tool)}/reminder`, { method: "POST" });
+
+
+// --- the AI browser (the AI works in a browser the person can watch and take over)
+export type BrowserTask = {
+  id: string; goal: string; status: "starting" | "running" | "human" | "needs_human" | "done" | "failed" | "cancelled"; steps: { at: string; text: string }[];
+  summary: string; reason: string; live_url: string | null; provider: string; has_shot: boolean; view: { width: number; height: number };
+  downloads: { index: number; name: string; size: number }[];
+};
+export type BrowserStatus = { available: boolean; provider: string | null; active: BrowserTask | null };
+export async function browserCall<T = unknown>(path: string, method = "GET", body?: unknown): Promise<T> {
+  const res = await apiFetch(`${API_URL}/browser${path}`, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), cache: "no-store" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(errorText(err?.detail, `Échec (${res.status})`));
+  }
+  return res.json();
+}
+export async function browserScreen(id: string): Promise<string | null> {
+  const res = await apiFetch(`${API_URL}/browser/tasks/${id}/screen`, { cache: "no-store" });
+  return res.ok ? URL.createObjectURL(await res.blob()) : null;
+}

@@ -21,7 +21,7 @@ MAX_STEPS = 10
 SYSTEM = (
     "Tu es l'Exécutant : l'agent qui fait réellement le travail dans le logiciel d'une PME française. On te donne une tâche ; tu la réalises avec tes outils, puis tu rends compte. "
     "Outils : find_in_company_data (ce que le logiciel sait déjà : produits, stocks, fournisseurs, clients, analyse), web_search et read_page (faits externes), "
-    "create_product, create_supplier, create_customer, create_calendar_event, create_task, draft_email (brouillon : RIEN n'est envoyé, le client relit et envoie). "
+    "create_product, create_supplier, create_customer, create_calendar_event, create_task, start_browser_task (navigateur visible pour exporter un fichier ou lire une info derrière une connexion), draft_email (brouillon : RIEN n'est envoyé, le client relit et envoie). "
     "Règles : vérifie d'abord avec find_in_company_data pour ne pas créer de doublon ; n'invente aucune donnée (référence, prix, adresse e-mail, date) : si une information manque, ne crée pas l'élément et dis précisément ce qu'il faut fournir ; "
     "ne crée que ce que la tâche demande ; n'écris jamais à un tiers. Termine par un compte rendu court : ce que tu as fait (avec les noms), ce que tu n'as pas pu faire et pourquoi, la suite proposée."
 )
@@ -36,6 +36,7 @@ TOOLS = [
     {"type": "function", "function": {"name": "create_customer", "description": "Ajoute un client ou prospect.", "parameters": {**_P(name={"type": "string"}, country={"type": "string"}, notes={"type": "string"}, status={"type": "string", "enum": ["prospect", "active"]}), "required": ["name"]}}},
     {"type": "function", "function": {"name": "create_calendar_event", "description": "Ajoute un événement au calendrier (date AAAA-MM-JJ).", "parameters": {**_P(title={"type": "string"}, date={"type": "string"}, notes={"type": "string"}), "required": ["title", "date"]}}},
     {"type": "function", "function": {"name": "create_task", "description": "Crée une tâche de suivi pour l'équipe.", "parameters": {**_P(title={"type": "string"}, description={"type": "string"}), "required": ["title"]}}},
+    {"type": "function", "function": {"name": "start_browser_task", "description": "Lance l'IA dans un navigateur visible du client (exporter un fichier d'un logiciel, relever une info derrière une connexion). Le client suit, se connecte et valide lui-même.", "parameters": {**_P(goal={"type": "string"}, start_url={"type": "string"}), "required": ["goal"]}}},
     {"type": "function", "function": {"name": "draft_email", "description": "Prépare un brouillon d'e-mail (non envoyé).", "parameters": {**_P(to={"type": "string"}, subject={"type": "string"}, body={"type": "string"}), "required": ["subject", "body"]}}},
 ]
 
@@ -98,6 +99,16 @@ def _tool(session: Session, company: Company, name: str, args: dict, done: list[
         task = ActionsService(session, TenantEventBus(event_bus, cid)).create_manual_task(company_id=cid, title=title, description=_s(args.get("description"), 2000))
         done.append({"kind": "task", "id": str(task.id), "label": f"tâche « {title} »"})
         return f"Créé : tâche « {title} »."
+    if name == "start_browser_task":
+        from app.browser import manager
+
+        if not manager.available():
+            return "Le navigateur de l'IA n'est pas activé sur ce serveur : demande au client de faire l'export lui-même ou de te donner le fichier."
+        try:
+            manager.start(cid, _s(args.get("goal"), 1500), _s(args.get("start_url"), 500) or None)
+        except RuntimeError as exc:
+            return str(exc)
+        return "Navigateur lancé : le client le suit dans Agents IA > Navigateur de l'IA et gardera la main pour se connecter. Ne décris pas le résultat, dis seulement que c'est lancé."
     if name == "draft_email":
         from app.core.entities.communication import CommunicationDirection
 
