@@ -15,7 +15,7 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
-from app.agents import followup, perplexity, progress, service, veilleur_agent
+from app.agents import followup, perplexity, progress, reports, service, veilleur_agent
 from app.business_context.service import BusinessContextService
 from app.configuration import service as config_service
 from app.core.entities import AgentProposal, Company, Customer, Product, Supplier, Transaction
@@ -128,6 +128,9 @@ def run_directeur(session: Session, company: Company) -> dict:
         if message and done:
             text += " Cette fois : " + "; ".join(done) + "."
         _write(session, company.id, text)
+        titles = [p.title for p in session.query(AgentProposal).filter_by(company_id=company.id, agent="directeur", kind="finding", status="new").all()][:5]
+        detail = text + ("\n\nInitiatives que je vous propose (elles sont dans vos décisions, en tête de file) :\n- " + "\n- ".join(titles) if titles else "") + ("\n\nCe que j'ai fait : " + "; ".join(done) + "." if done else "")
+        reports.add(session, company.id, "directeur", "Le point du Directeur", detail, [{"label": "Voir mes décisions", "href": "/"}])
         service.log_run(session, company.id, "directeur", "ok", text[:300], created)
         progress.finish(company.id, "directeur", "done", text[:200])
         return {"message": text, "done": done}

@@ -283,6 +283,9 @@ def _book(task: Task) -> None:
             scope_session(db, task.company_id)
             service.log_run(db, task.company_id, "navigateur", "ok" if task.status == "done" else "error", f"{task.goal[:140]} ({task.status})", len(task.downloads))
             service.remember(db, task.company_id, "navigateur", task.goal, task.summary or task.status)
+            from app.agents import reports
+
+            reports.add(db, task.company_id, "navigateur", f"Le navigateur a {'terminé' if task.status == 'done' else 'été arrêté'} : {task.goal[:70]}", (task.summary or task.status) + (f"\n\n{len(task.downloads)} fichier(s) reçu(s) : à verser dans le logiciel depuis Agents IA." if task.downloads else ""), [{"label": "Ouvrir le navigateur de l'IA", "href": "/agents"}])
     except Exception:
         pass
 

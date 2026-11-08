@@ -622,3 +622,20 @@ def test_the_directeur_asks_proposes_and_keeps_a_journal(client, monkeypatch):
     assert any(p["agent"] == "directeur" and p["title"] == "Relancer la collecte des factures" for p in client.get("/agents/overview", headers=headers).json()["proposals"])
     log = client.get("/agents/directeur/journal", headers=headers).json()
     assert len(log) == 2 and log[0]["text"].startswith("Aucune vente")
+
+
+def test_finished_work_leaves_a_report_and_proposals_come_ranked(client):
+    headers = _director(client)
+    client.post("/agents/analyste/run", headers=headers)
+    pulse = client.get("/agents/pulse", headers=headers).json()
+    assert pulse["unread"] == 1 and pulse["latest"][0]["agent"] == "analyste"
+    text = pulse["latest"][0]["text"]
+    assert "J'ai analysé" in text and "chiffre d'affaires" in text  # says what was analysed and what is missing
+    assert any("relay" in s for s in pulse["latest"][0]["next"])
+    client.post("/agents/reports/read", headers=headers, json={"id": pulse["latest"][0]["id"]})
+    assert client.get("/agents/pulse", headers=headers).json()["unread"] == 0
+    client.post("/agents/directeur/run", headers=headers)
+    proposals = client.get("/agents/overview", headers=headers).json()["proposals"]
+    assert proposals and all("priority" in p for p in proposals)
+    assert [p["priority"] for p in proposals] == sorted((p["priority"] for p in proposals), reverse=True)
+    assert any(r["agent"] == "directeur" for r in client.get("/agents/reports", headers=headers).json())

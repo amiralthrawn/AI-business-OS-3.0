@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { agentsCall } from "@/lib/api";
+import ReportsViewer, { type Report } from "@/components/layout/ReportsViewer";
 
 type Job = { agent: string; label: string; status: "running" | "done" | "error" | "cancelled"; percent: number; steps: string[]; elapsed: number; started: number; cancelling: boolean };
 
@@ -13,6 +14,10 @@ const NAME: Record<string, string> = { directeur: "Directeur", analyste: "Analys
 export default function AIProgressDock() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [pulse, setPulse] = useState<{ waiting: number; unread: number; latest: Report[] } | null>(null);
+  const [viewer, setViewer] = useState<{ first: string | null } | null>(null);
+  const [newTask, setNewTask] = useState<number | null>(null);
+  const [lastWaiting, setLastWaiting] = useState<number | null>(null);
 
   useEffect(() => {
     try {
@@ -30,11 +35,28 @@ export default function AIProgressDock() {
     };
     load();
     const timer = setInterval(load, 3000);
+    const loadPulse = () => {
+      if (document.hidden) return;
+      agentsCall<{ waiting: number; unread: number; latest: Report[] }>("/pulse", "GET").then((p) => alive && setPulse(p)).catch(() => undefined);
+    };
+    loadPulse();
+    const pulseTimer = setInterval(loadPulse, 6000);
+    const open = () => setViewer({ first: null });
+    window.addEventListener("aibos:reports", open);
     return () => {
       alive = false;
       clearInterval(timer);
+      clearInterval(pulseTimer);
+      window.removeEventListener("aibos:reports", open);
     };
   }, []);
+
+  useEffect(() => {
+    if (!pulse) return;
+    if (lastWaiting !== null && pulse.waiting > lastWaiting) setNewTask(pulse.waiting);
+    setLastWaiting(pulse.waiting);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pulse?.waiting]);
 
   const working = jobs.some((j) => j.status === "running");
   useEffect(() => {
@@ -48,13 +70,37 @@ export default function AIProgressDock() {
   }, [working]);
 
   const visible = jobs.filter((j) => !hidden.has(`${j.agent}:${j.started}`) && (j.status === "running" || j.elapsed < 300));
-  if (visible.length === 0) return null;
+  const unread = (pulse?.latest ?? []).filter((r) => !hidden.has(`report:${r.id}`));
+  if (visible.length === 0 && unread.length === 0 && newTask === null && !viewer) return null;
 
   const close = (j: Job) => setHidden((h) => new Set(h).add(`${j.agent}:${j.started}`));
   const stop = (j: Job) => void agentsCall(`/progress/${j.agent}/cancel`).catch(() => undefined);
 
   return (
     <div className="pointer-events-none fixed bottom-[calc(76px+env(safe-area-inset-bottom))] right-3 z-40 flex w-[min(360px,calc(100vw-24px))] flex-col gap-2 md:bottom-5 md:right-5">
+      {viewer && <ReportsViewer firstId={viewer.first} onClose={() => { setViewer(null); setPulse((p) => (p ? { ...p, latest: [], unread: 0 } : p)); }} />}
+      {newTask !== null && (
+        <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-2xl border border-accent/40 bg-accent-soft p-3.5 shadow-card" role="status">
+          <p className="text-[12.5px] font-semibold text-accent-strong">Nouvelle tâche pour vous · {newTask} à faire</p>
+          <div className="flex items-center gap-3">
+            <a href="/" className="text-[12.5px] font-semibold text-accent-strong underline">Voir</a>
+            <button type="button" onClick={() => setNewTask(null)} className="text-[18px] leading-none text-text-faint hover:text-text" aria-label="Fermer">×</button>
+          </div>
+        </div>
+      )}
+      {unread.map((r) => (
+        <div key={r.id} className="pointer-events-auto rounded-2xl border border-border bg-surface p-3.5 shadow-card" role="status">
+          <div className="flex items-start gap-2.5">
+            <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-accent" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[12.5px] font-semibold text-text">{r.title}</p>
+              <p className="mt-0.5 line-clamp-2 text-[12.5px] text-text-soft">{r.text.split("\n")[0]}</p>
+              <button type="button" onClick={() => setViewer({ first: r.id })} className="mt-1.5 text-[12.5px] font-semibold text-accent-strong hover:underline">Lire le compte rendu</button>
+            </div>
+            <button type="button" onClick={() => setHidden((h) => new Set(h).add(`report:${r.id}`))} className="-mr-1 -mt-1 rounded-full px-1.5 text-[18px] leading-none text-text-faint hover:text-text" aria-label="Fermer">×</button>
+          </div>
+        </div>
+      ))}
       {visible.map((j) => (
         <div key={`${j.agent}:${j.started}`} className="pointer-events-auto rounded-2xl border border-border bg-surface p-3.5 shadow-card" role="status">
           <div className="flex items-start gap-2.5">

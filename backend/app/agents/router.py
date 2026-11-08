@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.access import policy as access
 from app.access.deps import CurrentUser, get_current_user, require
-from app.agents import directeur, followup, perplexity, progress, service, veilleur_agent
+from app.agents import directeur, followup, perplexity, priority, progress, reports, service, veilleur_agent
 from app.browser import manager as browser_manager
 from app.core.entities import AgentProposal, Company
 from app.core.i18n import tx
@@ -80,8 +80,8 @@ def overview(db: Session = Depends(get_db), user: CurrentUser = Depends(get_curr
     is_director = user.can(access.WRITE_SETTINGS)
     proposals = []
     if user.can(access.VIEW_INTELLIGENCE) or is_director:
-        rows = db.query(AgentProposal).filter(AgentProposal.status.in_(("new", "auto_done"))).order_by(AgentProposal.created_at.desc()).limit(40).all()
-        proposals = [_read(p) for p in rows]
+        rows = db.query(AgentProposal).filter(AgentProposal.status.in_(("new", "auto_done"))).order_by(AgentProposal.created_at.desc()).limit(60).all()
+        proposals = [{**_read(p), "priority": score} for p, score in priority.rank(db, company, rows)]
     agents = []
     for key, (label, description) in LABELS.items():
         run = service.last_run(db, company.id, key)
@@ -191,6 +191,27 @@ def run_agent(agent: str, db: Session = Depends(get_db), _user: CurrentUser = De
         last = service.last_analysis(db, company.id) or {}
         extra = {"summary": last.get("summary"), "changed": last.get("changed", True)}
     return {"status": run.status, "found": run.found, "message": run.message, **extra}
+
+
+@router.get("/reports")
+def get_reports(db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> list[dict]:
+    return reports.listing(db, _company(db).id)
+
+
+@router.post("/reports/read")
+def read_reports(payload: dict | None = None, db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    reports.mark_read(db, _company(db).id, (payload or {}).get("id"))
+    return {"ok": True}
+
+
+@router.get("/pulse")
+def pulse(db: Session = Depends(get_db), _user: CurrentUser = Depends(require(access.WRITE_SETTINGS))) -> dict:
+    """What the notification pills show: tasks waiting, unread reports."""
+
+    company = _company(db)
+    waiting = db.query(AgentProposal).filter_by(company_id=company.id, status="new").count()
+    unread = [r for r in reports.listing(db, company.id) if not r["read"]]
+    return {"waiting": waiting, "unread": len(unread), "latest": unread[:3]}
 
 
 @router.get("/progress")

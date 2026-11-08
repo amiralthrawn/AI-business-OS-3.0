@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.agents import executant, followup, perplexity, progress, veilleur, veilleur_agent
+from app.agents import executant, followup, perplexity, progress, reports, veilleur, veilleur_agent
 from app.business_context.service import BusinessContextService
 from app.configuration import service as config_service
 from app.core.entities import (
@@ -495,6 +495,11 @@ def _run_veilleur(session: Session, company: Company) -> AgentRun:
     run.message = f"{created} nouvelle(s) information(s)" if created else "Rien de nouveau"
     run.finished_at = now()
     session.commit()
+    titles = [str(i.get("title")) for i, _ in results if i.get("title")][:8]
+    text = ("Ce que j'ai cherché : salons, prix, concurrents, réglementation" + (f", et vos sujets suivis ({', '.join(topics[:5])})" if topics else "") + ".\n\n"
+            + (f"Ce que j'ai trouvé : {len(results)} résultat(s), dont {created} nouveau(x) ajouté(s) à vos décisions :\n- " + "\n- ".join(titles) if titles else "Je n'ai rien trouvé de fiable cette fois : je recommence au prochain tour.")
+            + ("" if created else "\n\nRien de neuf depuis la dernière veille." if titles else ""))
+    reports.add(session, company.id, "veilleur", "Compte rendu du Veilleur", text, [{"label": "Voir mes décisions", "href": "/"}] if created else [])
     return run
 
 
@@ -508,6 +513,7 @@ def _situation(session: Session, company_id: uuid.UUID) -> dict:
         "transactions": session.query(func.count(Transaction.id)).filter_by(company_id=company_id).scalar() or 0,
         "products": session.query(func.count(Product.id)).filter_by(company_id=company_id).scalar() or 0,
         "customers": session.query(func.count(Customer.id)).filter_by(company_id=company_id).scalar() or 0,
+        "suppliers": session.query(func.count(Supplier.id)).filter_by(company_id=company_id).scalar() or 0,
     }
 
 
@@ -596,8 +602,27 @@ def _run_analyste(session, company, event_bus, TenantEventBus, run_monitoring_sw
         followup.ask_questions(session, company)
     except Exception:
         session.rollback()
+    _analyste_report(session, company, after, summary)
     progress.finish(cid, "analyste", "done", f"Analyse terminée : {summary[:160]}")
     return run
+
+
+def _analyste_report(session: Session, company: Company, after: dict, summary: str) -> None:
+    n = lambda v: f"{v:,}".replace(",", "\u202f")
+    lines = [f"J'ai analysé {n(after['products'])} produits, {n(after['customers'])} clients, {n(after['suppliers'])} fournisseurs et {n(after['transactions'])} transactions.", summary]
+    missing = []
+    if after["transactions"] == 0:
+        lines.append("Je ne vois aucune vente ni aucun achat : le chiffre d'affaires et les coûts restent donc à 0, et je ne peux calculer ni marge, ni tendance, ni baisse d'activité d'un client.")
+        missing.append("vos ventes et vos achats (ou votre FEC)")
+    if after["suppliers"] == 0:
+        lines.append("Je n'ai aucun fournisseur : je ne peux suivre ni retards de livraison ni hausses de prix.")
+        missing.append("votre liste de fournisseurs")
+    if missing:
+        lines.append("Pour aller plus loin, il me manque : " + ", ".join(missing) + ". Le Guide vous aide à les déposer depuis l'accueil.")
+    else:
+        lines.append("Mes données sont suffisantes pour l'instant : je continue de surveiller et je vous préviens dès qu'un chiffre bouge.")
+    steps = [{"label": "Transmettre cette analyse au Veilleur", "relay": "Cherche sur le web et dans les sites utiles ce qui peut m'aider à traiter ces points."}, {"label": "Voir mes décisions", "href": "/"}]
+    reports.add(session, company.id, "analyste", "Compte rendu de l'Analyste", "\n\n".join(lines), steps)
 
 
 def suggest_browser_tasks(session: Session, company: Company) -> int:
@@ -742,6 +767,7 @@ def execute_proposal(session: Session, company: Company, proposal: AgentProposal
     used = used_summary(perplexity.peek_usage())
     log_run(session, company.id, "executant", "ok", f"{proposal.title[:150]} ({len(out['done'])} action(s))", len(out["done"]))
     remember(session, company.id, "executant", proposal.title, out["answer"], [d["label"] for d in out["done"]])
+    reports.add(session, company.id, "executant", f"L'Exécutant a terminé : {proposal.title[:80]}", out["answer"] + ("\n\nCe qu'il a fait :\n- " + "\n- ".join(d["label"] for d in out["done"]) if out["done"] else ""))
     return {"answer": out["answer"], "done": out["done"], "used": used, "status": proposal.status}
 
 

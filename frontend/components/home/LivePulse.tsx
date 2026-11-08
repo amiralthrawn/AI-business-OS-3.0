@@ -1,3 +1,4 @@
+import OpenReports from "@/components/home/OpenReports";
 import type { AgentsOverview } from "@/lib/api";
 
 function ago(iso: string | null): string {
@@ -27,6 +28,7 @@ export default function LivePulse({ agents, open }: { agents: AgentsOverview["ag
           </li>
         ))}
       </ul>
+      <div className="mt-3"><OpenReports /></div>
       {open > 0 && <p className="mt-3 text-[12.5px] text-text-soft">{open} point{open > 1 ? "s" : ""} attendent votre avis plus bas : l&rsquo;IA s&rsquo;en sert pour mieux vous connaître.</p>}
     </section>
   );

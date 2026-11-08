@@ -80,6 +80,8 @@ export default async function CommandCenterPage({ searchParams }: { searchParams
             )}
           </section>
 
+          {agents && <AgentFeed proposals={agents.proposals} />}
+
           {agents && agents.agents.length > 0 && <BrowserNotice />}
           {agents?.guide?.steps.some((st) => st.href === "/communications?tab=website") && <SiteIntegration websiteUrl={company?.website_url ?? null} compact />}
           {agents?.guide?.steps.some((st) => st.href.startsWith("/?service=")) && <ServiceConnections />}
@@ -89,8 +91,6 @@ export default async function CommandCenterPage({ searchParams }: { searchParams
 
           {agents && agents.agents.length > 0 && <LivePulse agents={agents.agents} open={agents.proposals.filter((p) => p.kind === "missing_info").length} />}
           {agents && agents.agents.length > 0 && <ActivityPanel />}
-
-          {agents && <AgentFeed proposals={agents.proposals} />}
 
           <section>
             <span className="mb-4 block text-[11.5px] font-bold uppercase tracking-wide text-text-faint">Vos décisions, par montant concerné</span>
