@@ -56,8 +56,14 @@ class Settings(BaseSettings):
     auth_secret_key: str | None = None
     access_token_ttl_hours: int = 12
     invite_ttl_days: int = 7
-    # Whether anyone can create a new company from the sign-up page.
-    signup_enabled: bool = True
+    # Whether anyone can create a new company from the sign-up page. Closed by
+    # default: access is reserved to the accounts listed below.
+    signup_enabled: bool = False
+    # Comma-separated emails allowed to sign in (env ALLOWED_LOGIN_EMAILS).
+    # Any other account is refused at sign-in, sign-up and invitation, and its
+    # existing sessions stop working on their next request. "*" lets every
+    # account in; an empty value lets nobody in.
+    allowed_login_emails: str = "enzo.lusapro@gmail.com,enzo92k@gmail.com"
     # Where invitation links point (the frontend).
     frontend_url: str = "http://localhost:3000"
 
@@ -75,6 +81,14 @@ class Settings(BaseSettings):
             if value.startswith(prefix):
                 return "postgresql+psycopg://" + value[len(prefix):]
         return value
+
+    def login_allowed(self, email: str | None) -> bool:
+        """Whether `email` may sign in (see `allowed_login_emails`)."""
+
+        allowed = {item.strip().lower() for item in self.allowed_login_emails.split(",") if item.strip()}
+        if "*" in allowed:
+            return True
+        return bool(email) and email.strip().lower() in allowed
 
     def cors_allowed_origins(self) -> list[str] | None:
         """Parses `allowed_origins` into a list, or `None` when unset.

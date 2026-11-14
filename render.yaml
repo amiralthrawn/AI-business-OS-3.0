@@ -27,6 +27,10 @@ services:
         generateValue: true
       - key: AUTH_MODE
         value: required
+      - key: ALLOWED_LOGIN_EMAILS  # only these accounts can sign in ("*" = everyone)
+        value: enzo.lusapro@gmail.com,enzo92k@gmail.com
+      - key: SIGNUP_ENABLED
+        value: "false"
       - key: AGENTS_SCHEDULER
         value: "true"
       - key: ALLOWED_ORIGINS

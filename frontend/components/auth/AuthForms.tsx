@@ -100,12 +100,17 @@ export function LoginForm() {
           Se connecter
         </Button>
       </form>
-      <p className="mt-6 text-center text-[13px] text-text-soft">
-        Nouvelle entreprise ?{" "}
-        <Link href="/signup" className="font-semibold text-accent-strong hover:underline">
-          Créer un compte
-        </Link>
-      </p>
+    </AuthShell>
+  );
+}
+
+// Sign-up is closed (the API refuses it too): access is reserved.
+export function SignupClosed() {
+  return (
+    <AuthShell eyebrow="Accès réservé" title="La création de compte est fermée" subtitle="L'accès à ce logiciel est réservé.">
+      <Link href="/login" className="text-[13.5px] font-semibold text-accent-strong hover:underline">
+        Aller à la connexion
+      </Link>
     </AuthShell>
   );
 }

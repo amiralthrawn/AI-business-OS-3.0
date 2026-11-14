@@ -80,6 +80,13 @@ def _valid_email(email: str | None) -> str:
     return email
 
 
+def _not_allowed() -> HTTPException:
+    return HTTPException(
+        status_code=403,
+        detail=tx("L'accès à ce logiciel est réservé.", "Access to this software is restricted."),
+    )
+
+
 def _session_for(profile: UserProfile, db: Session) -> SessionRead:
     profile.last_login_at = datetime.now(timezone.utc)
     db.commit()
@@ -97,6 +104,8 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> SessionRead
     if not get_settings().signup_enabled:
         raise HTTPException(status_code=403, detail=tx("La création de compte est fermée.", "Sign-up is closed."))
     email = _valid_email(normalize_email(payload.email))
+    if not get_settings().login_allowed(email):
+        raise _not_allowed()
     _check_password(payload.password)
     if db.query(UserProfile.id).filter_by(email=email).first() is not None:
         raise HTTPException(status_code=409, detail=tx("Un compte existe déjà avec cette adresse.", "An account already exists with this email."))
@@ -130,6 +139,8 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> SessionRead:
         profile = None
     if profile is None or not profile.is_active:
         raise HTTPException(status_code=401, detail=tx("E-mail ou mot de passe incorrect.", "Incorrect email or password."))
+    if not get_settings().login_allowed(profile.email):
+        raise _not_allowed()
     return _session_for(profile, db)
 
 
@@ -153,6 +164,8 @@ def read_invitation(token: str, db: Session = Depends(get_db)) -> InvitationRead
 @router.post("/invitations/{token}/accept", response_model=SessionRead)
 def accept_invitation(token: str, payload: AcceptInviteRequest, db: Session = Depends(get_db)) -> SessionRead:
     profile = _pending_invitation(token, db)
+    if not get_settings().login_allowed(profile.email):
+        raise _not_allowed()
     _check_password(payload.password)
     profile.password_hash = hash_password(payload.password)
     profile.invite_token_hash = None
