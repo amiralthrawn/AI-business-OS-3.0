@@ -7,6 +7,10 @@ os.environ.setdefault("AGENTS_SCHEDULER", "false")
 os.environ.setdefault("PERPLEXITY_API_KEY", "")
 os.environ.setdefault("GEMINI_API_KEY", "")
 os.environ.setdefault("OPENROUTER_API_KEY", "")
+# The suite signs up many throwaway companies; production keeps both closed
+# (tests/test_v3_access_lockdown.py checks the real defaults).
+os.environ.setdefault("SIGNUP_ENABLED", "true")
+os.environ.setdefault("ALLOWED_LOGIN_EMAILS", "*")
 os.environ.setdefault("AUTH_SECRET_KEY", "test-secret-key-not-for-production-0123456789")
 
 import pytest

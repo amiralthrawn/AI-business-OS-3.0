@@ -5,6 +5,8 @@ token (`Authorization: Bearer ...`, app.auth). The profile must still exist,
 be active, have an account and belong to the company named in the token.
 The request's database session is then scoped to that company
 (app.core.tenant_scope): nothing from another company can be read or written.
+The profile's email must also be in ALLOWED_LOGIN_EMAILS, so removing an
+account from that list ends its open sessions on their next request.
 No token, or an invalid one -> 401.
 
 `AUTH_MODE=legacy` (the bundled demo and the test suite): the V2 behavior.
@@ -69,6 +71,9 @@ def _authenticated_user(authorization: str | None, db: Session) -> CurrentUser:
     profile_id, company_id = claims
     profile = db.get(UserProfile, profile_id)
     if profile is None or not profile.is_active or not profile.password_hash or profile.company_id != company_id:
+        raise _unauthenticated()
+    # Accounts outside ALLOWED_LOGIN_EMAILS lose their open sessions too.
+    if not get_settings().login_allowed(profile.email):
         raise _unauthenticated()
     scope_session(db, company_id)
     return CurrentUser(role=profile.role, profile=profile)

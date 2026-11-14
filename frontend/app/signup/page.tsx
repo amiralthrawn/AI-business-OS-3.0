@@ -1,5 +1,5 @@
-import { SignupForm } from "@/components/auth/AuthForms";
+import { SignupClosed } from "@/components/auth/AuthForms";
 
 export default function SignupPage() {
-  return <SignupForm />;
+  return <SignupClosed />;
 }
